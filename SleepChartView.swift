@@ -29,15 +29,10 @@ struct SleepStagesChartView: View {
                 }
             }
             .chartXScale(domain: xAxisDomain)
-            .chartXAxis {
-                AxisMarks(values: .stride(by: .hour)) {
-                    AxisGridLine()
-                    AxisValueLabel(format: .dateTime.hour(.defaultDigits(amPM: .omitted)))
-                }
-            }
             .chartYAxis {
-                AxisMarks(values: ["Awake", "REM", "Core", "Deep"])
+                AxisMarks(values: ["Awake", "REM", "Core", "Deep"]) // Explicitly set y-axis order
             }
+            .chartYScale(domain: ["Awake", "REM", "Core", "Deep"]) // Define the y-axis scale in the specified order
             .chartForegroundStyleScale([
                 "Awake": .red,
                 "REM": .blue.opacity(0.5),
