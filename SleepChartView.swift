@@ -11,9 +11,27 @@ import Charts
 struct SleepStagesChartView: View {
     var sleepData: [(stage: String, startDate: Date, endDate: Date)]
     
+    // Compute the start and end times for non-awake intervals
+    private var sleepIntervalText: String {
+        // Filter out "Awake" intervals and sort by start date
+        let nonAwakeData = sleepData.filter { $0.stage != "Awake" }.sorted { $0.startDate < $1.startDate }
+        
+        // Ensure there are non-awake intervals before formatting
+        guard let start = nonAwakeData.first?.startDate, let end = nonAwakeData.last?.endDate else {
+            return "Last Night's Sleep" // Default title if no non-awake data
+        }
+        
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        let startText = formatter.string(from: start)
+        let endText = formatter.string(from: end)
+        
+        return "Last Night's Sleep (\(startText) - \(endText))"
+    }
+    
     var body: some View {
         VStack(alignment: .leading) {
-            Text("Last Night's Sleep Stages")
+            Text(sleepIntervalText)
                 .font(.headline)
                 .padding(.top)
                 .padding(.horizontal)
