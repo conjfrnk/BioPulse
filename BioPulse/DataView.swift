@@ -9,6 +9,7 @@ import SwiftUI
 
 struct DataView: View {
     @State private var showingSettings = false
+    @State private var showingInfo = false
     @State private var stepsData: [Date: Double] = [:]
     @State private var startDate = Calendar.current.date(from: Calendar.current.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))! // Start of the current week
     @State private var sleepData: [(stage: String, startDate: Date, endDate: Date)] = []
@@ -38,6 +39,13 @@ struct DataView: View {
             }
             .navigationTitle("Data")
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: {
+                        showingInfo = true
+                    }) {
+                        Image(systemName: "info.circle")
+                    }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: {
                         showingSettings = true
@@ -48,6 +56,9 @@ struct DataView: View {
             }
             .sheet(isPresented: $showingSettings) {
                 SettingsView()
+            }
+            .sheet(isPresented: $showingInfo) {
+                InfoView()
             }
             .onAppear {
                 loadStepsData()

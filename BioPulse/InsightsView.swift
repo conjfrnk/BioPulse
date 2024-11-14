@@ -9,6 +9,7 @@ import SwiftUI
 
 struct InsightsView: View {
     @State private var showingSettings = false
+    @State private var showingInfo = false
 
     var body: some View {
         NavigationView {
@@ -19,6 +20,13 @@ struct InsightsView: View {
             }
             .navigationTitle("Insights")
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: {
+                        showingInfo = true
+                    }) {
+                        Image(systemName: "info.circle")
+                    }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: {
                         showingSettings = true
@@ -29,6 +37,9 @@ struct InsightsView: View {
             }
             .sheet(isPresented: $showingSettings) {
                 SettingsView()
+            }
+            .sheet(isPresented: $showingInfo) {
+                InfoView()
             }
         }
     }
