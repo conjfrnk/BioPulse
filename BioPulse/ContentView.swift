@@ -28,16 +28,6 @@ struct ContentView: View {
                     Text("Insights")
                 }
         }
-        .navigationTitle("Health Data")
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button(action: {
-                    // Action for hamburger menu
-                }) {
-                    Image(systemName: "line.horizontal.3")
-                }
-            }
-        }
     }
 }
 

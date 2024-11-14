@@ -8,9 +8,28 @@
 import SwiftUI
 
 struct InsightsView: View {
+    @State private var showingSettings = false
+
     var body: some View {
-        Text("Insights")
-            .font(.largeTitle)
-            .padding()
+        NavigationView {
+            VStack {
+                Text("Insights")
+                    .font(.largeTitle)
+                    .padding()
+            }
+            .navigationTitle("Insights")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: {
+                        showingSettings = true
+                    }) {
+                        Image(systemName: "gearshape")
+                    }
+                }
+            }
+            .sheet(isPresented: $showingSettings) {
+                SettingsView()
+            }
+        }
     }
 }
