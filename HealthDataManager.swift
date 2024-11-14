@@ -28,8 +28,8 @@ class HealthDataManager {
     func fetchStepCount(completion: @escaping (Double?, Error?) -> Void) {
         let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
         let now = Date()
-        let startOfDay = Calendar.current.startOfDay(for: now)
-        let predicate = HKQuery.predicateForSamples(withStart: startOfDay, end: now, options: .strictStartDate)
+        let oneWeekAgo = Calendar.current.date(byAdding: .day, value: -7, to: now)!
+        let predicate = HKQuery.predicateForSamples(withStart: oneWeekAgo, end: now, options: .strictStartDate)
 
         let query = HKStatisticsQuery(quantityType: stepType, quantitySamplePredicate: predicate, options: .cumulativeSum) { _, result, error in
             guard let result = result, let sum = result.sumQuantity() else {
