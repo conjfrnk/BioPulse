@@ -43,4 +43,27 @@ class HealthDataManager {
 
         healthStore.execute(query)
     }
+    
+    func fetchSleepData(completion: @escaping (Double?, Error?) -> Void) {
+        let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!
+        let now = Date()
+        let startOfDay = Calendar.current.startOfDay(for: now)
+        let predicate = HKQuery.predicateForSamples(withStart: startOfDay, end: now, options: .strictStartDate)
+
+        let query = HKSampleQuery(sampleType: sleepType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, results, error in
+            guard let results = results else {
+                completion(nil, error)
+                return
+            }
+
+            let totalSleep = results.compactMap { sample -> Double? in
+                guard let sample = sample as? HKCategorySample else { return nil }
+                return sample.endDate.timeIntervalSince(sample.startDate) / 3600 // Convert to hours
+            }.reduce(0, +)
+
+            completion(totalSleep, nil)
+        }
+
+        healthStore.execute(query)
+    }
 }

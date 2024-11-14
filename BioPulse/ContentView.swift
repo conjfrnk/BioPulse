@@ -8,36 +8,34 @@
 import SwiftUI
 
 struct ContentView: View {
-    @State private var steps: Double = 0.0
-    @State private var isAuthorized = false
-    private let healthDataManager = HealthDataManager()
-    
     var body: some View {
-        VStack {
-            Text("Steps Today: \(Int(steps))")
-                .font(.largeTitle)
-                .padding()
+        TabView {
+            DataView()
+                .tabItem {
+                    Image(systemName: "list.dash")
+                    Text("Data")
+                }
             
-            if !isAuthorized {
-                Button("Request HealthKit Access") {
-                    healthDataManager.requestAuthorization { success, error in
-                        if success {
-                            isAuthorized = true
-                        }
-                    }
+            TrendView()
+                .tabItem {
+                    Image(systemName: "chart.bar")
+                    Text("Trends")
                 }
-                .padding()
-            } else {
-                Button("Fetch Step Count") {
-                    healthDataManager.fetchStepCount { steps, error in
-                        if let steps = steps {
-                            DispatchQueue.main.async {
-                                self.steps = steps
-                            }
-                        }
-                    }
+            
+            InsightsView()
+                .tabItem {
+                    Image(systemName: "lightbulb")
+                    Text("Insights")
                 }
-                .padding()
+        }
+        .navigationTitle("Health Data")
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(action: {
+                    // Action for hamburger menu
+                }) {
+                    Image(systemName: "line.horizontal.3")
+                }
             }
         }
     }
