@@ -11,14 +11,12 @@ import Charts
 struct SleepStagesChartView: View {
     var sleepData: [(stage: String, startDate: Date, endDate: Date)]
     
-    // Compute the start and end times for non-awake intervals
+    // Calculate the formatted sleep interval text (start and end times)
     private var sleepIntervalText: String {
-        // Filter out "Awake" intervals and sort by start date
         let nonAwakeData = sleepData.filter { $0.stage != "Awake" }.sorted { $0.startDate < $1.startDate }
         
-        // Ensure there are non-awake intervals before formatting
         guard let start = nonAwakeData.first?.startDate, let end = nonAwakeData.last?.endDate else {
-            return "Last Night's Sleep" // Default title if no non-awake data
+            return "Last Night's Sleep"
         }
         
         let formatter = DateFormatter()
@@ -29,8 +27,42 @@ struct SleepStagesChartView: View {
         return "Last Night's Sleep (\(startText) - \(endText))"
     }
     
+    // Calculate total sleep duration
+    private var totalSleepTime: TimeInterval {
+        sleepData.reduce(0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }
+    }
+    
+    // Calculate duration and percentage for each sleep stage
+    private var sleepStageInfo: [(stage: String, color: Color, duration: String, percentage: String)] {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        
+        return ["Awake", "REM", "Core", "Deep"].map { stage in
+            let duration = sleepData
+                .filter { $0.stage == stage }
+                .reduce(0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }
+            let percentage = totalSleepTime > 0 ? (duration / totalSleepTime) * 100 : 0
+            let hours = Int(duration) / 3600
+            let minutes = (Int(duration) % 3600) / 60
+            let formattedDuration = String(format: "%02dh %02dm", hours, minutes)
+            let formattedPercentage = String(format: "%.1f%%", percentage)
+            
+            let color: Color
+            switch stage {
+                case "Awake": color = .red
+                case "REM": color = .blue.opacity(0.5)
+                case "Core": color = .blue
+                case "Deep": color = .purple
+                default: color = .gray
+            }
+            
+            return (stage, color, formattedDuration, formattedPercentage)
+        }
+    }
+    
     var body: some View {
         VStack(alignment: .leading) {
+            // Title with sleep interval
             Text(sleepIntervalText)
                 .font(.headline)
                 .padding(.top)
@@ -43,7 +75,12 @@ struct SleepStagesChartView: View {
                         xEnd: .value("End Time", data.endDate),
                         y: .value("Stage", data.stage)
                     )
-                    .foregroundStyle(by: .value("Stage", data.stage))
+                    .foregroundStyle(
+                        data.stage == "Awake" ? .red :
+                        data.stage == "REM" ? .blue.opacity(0.5) :
+                        data.stage == "Core" ? .blue :
+                        data.stage == "Deep" ? .purple : .gray
+                    )
                 }
             }
             .chartXScale(domain: xAxisDomain)
@@ -51,14 +88,29 @@ struct SleepStagesChartView: View {
                 AxisMarks(values: ["Awake", "REM", "Core", "Deep"]) // Explicitly set y-axis order
             }
             .chartYScale(domain: ["Awake", "REM", "Core", "Deep"]) // Define the y-axis scale in the specified order
-            .chartForegroundStyleScale([
-                "Awake": .red,
-                "REM": .blue.opacity(0.5),
-                "Core": .blue,
-                "Deep": .purple
-            ])
             .frame(height: 200)
             .padding(.horizontal)
+            
+            // Custom legend with equal spacing across the screen
+            HStack {
+                ForEach(sleepStageInfo, id: \.stage) { info in
+                    VStack(alignment: .center, spacing: 4) {
+                        // Colored line for each stage
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(info.color)
+                            .frame(width: 40, height: 4) // Thin colored line with rounded corners
+                        
+                        // Stage info text formatted as "Stage (XX%) \n HH MM"
+                        Text("\(info.stage) (\(info.percentage))\n\(info.duration)")
+                            .font(.footnote)
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.primary)
+                    }
+                    .frame(maxWidth: .infinity) // Distribute each item evenly across the row
+                }
+            }
+            .padding(.horizontal)
+            .padding(.top, 8)
         }
     }
     
