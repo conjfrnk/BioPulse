@@ -128,17 +128,27 @@ struct SleepStagesChartView: View {
         return sleepData.filter { $0.startDate >= previousDay2PM }
     }
     
-    // Calculate the x-axis domain for the sleep chart based on filtered data
+    // Calculate the x-axis domain for the sleep chart by rounding down the start and rounding up the end
     private var sleepXAxisDomain: ClosedRange<Date> {
-        let filteredData = sleepDataAfter2PMPreviousDay()
+        let nightSleepData = sleepDataAfter2PMPreviousDay()
         
-        guard let firstIntervalStart = filteredData.map(\.startDate).min(),
-              let lastIntervalEnd = filteredData.map(\.endDate).max() else {
-            let defaultDate = Calendar.current.startOfDay(for: Date())
-            return defaultDate...defaultDate
+        guard let start = nightSleepData.first?.startDate, let end = nightSleepData.last?.endDate else {
+            // If no data is available, return a default range for the past 24 hours
+            let now = Date()
+            let startOfDay = Calendar.current.startOfDay(for: now)
+            let endOfDay = Calendar.current.date(byAdding: .hour, value: 24, to: startOfDay)!
+            return startOfDay...endOfDay
         }
         
-        // Set the domain to exactly match the range from the first interval to the last interval
-        return firstIntervalStart...lastIntervalEnd
+        // Round the start time down to the previous hour
+        let roundedStart = Calendar.current.date(bySettingHour: Calendar.current.component(.hour, from: start), minute: 0, second: 0, of: start) ?? start
+        
+        // Round the end time up to the next hour
+        var roundedEnd = Calendar.current.date(bySetting: .minute, value: 0, of: end) ?? end
+        if roundedEnd < end {
+            roundedEnd = Calendar.current.date(byAdding: .hour, value: 1, to: roundedEnd) ?? end
+        }
+        
+        return roundedStart...roundedEnd
     }
 }
