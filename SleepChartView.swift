@@ -11,11 +11,11 @@ import Charts
 struct SleepStagesChartView: View {
     var sleepData: [(stage: String, startDate: Date, endDate: Date)]
     
-    // Calculate the formatted sleep interval text (start and end times)
+    // Calculate the formatted sleep interval text (start and end times) based on the filtered data
     private var sleepIntervalText: String {
-        let nonAwakeData = sleepData.filter { $0.stage != "Awake" }.sorted { $0.startDate < $1.startDate }
+        let nightSleepData = sleepDataAfter2PMPreviousDay()
         
-        guard let start = nonAwakeData.first?.startDate, let end = nonAwakeData.last?.endDate else {
+        guard let start = nightSleepData.first?.startDate, let end = nightSleepData.last?.endDate else {
             return "Last Night's Sleep"
         }
         
@@ -27,18 +27,17 @@ struct SleepStagesChartView: View {
         return "Last Night's Sleep (\(startText) - \(endText))"
     }
     
-    // Calculate total sleep duration
+    // Calculate total sleep duration for the legend
     private var totalSleepTime: TimeInterval {
-        sleepData.reduce(0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }
+        sleepDataAfter2PMPreviousDay().reduce(0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }
     }
     
     // Calculate duration and percentage for each sleep stage
     private var sleepStageInfo: [(stage: String, color: Color, duration: String, percentage: String)] {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
+        let filteredData = sleepDataAfter2PMPreviousDay()
         
         return ["Awake", "REM", "Core", "Deep"].map { stage in
-            let duration = sleepData
+            let duration = filteredData
                 .filter { $0.stage == stage }
                 .reduce(0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }
             let percentage = totalSleepTime > 0 ? (duration / totalSleepTime) * 100 : 0
@@ -69,7 +68,7 @@ struct SleepStagesChartView: View {
                 .padding(.horizontal)
             
             Chart {
-                ForEach(sleepData, id: \.startDate) { data in
+                ForEach(sleepDataAfter2PMPreviousDay(), id: \.startDate) { data in
                     RectangleMark(
                         xStart: .value("Start Time", data.startDate),
                         xEnd: .value("End Time", data.endDate),
@@ -83,7 +82,13 @@ struct SleepStagesChartView: View {
                     )
                 }
             }
-            .chartXScale(domain: xAxisDomain)
+            .chartXScale(domain: sleepXAxisDomain) // Set the x-axis domain for sleep chart
+            .chartXAxis {
+                AxisMarks(values: .stride(by: .hour)) {
+                    AxisGridLine()
+                    AxisValueLabel(format: .dateTime.hour(.defaultDigits(amPM: .omitted)))
+                }
+            }
             .chartYAxis {
                 AxisMarks(values: ["Awake", "REM", "Core", "Deep"]) // Explicitly set y-axis order
             }
@@ -114,22 +119,26 @@ struct SleepStagesChartView: View {
         }
     }
     
-    // Calculate the x-axis domain based on sleep data intervals
-    private var xAxisDomain: ClosedRange<Date> {
-        let start = sleepData.map(\.startDate).min()?.roundedHourDown() ?? Date()
-        let end = sleepData.map(\.endDate).max()?.roundedHourUp() ?? Date()
-        return start...end
-    }
-}
-
-extension Date {
-    // Rounds down to the previous hour
-    func roundedHourDown() -> Date {
-        Calendar.current.date(bySettingHour: Calendar.current.component(.hour, from: self), minute: 0, second: 0, of: self)!
+    // Filter sleep data to only include entries starting from 2 PM the previous day
+    private func sleepDataAfter2PMPreviousDay() -> [(stage: String, startDate: Date, endDate: Date)] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let previousDay2PM = calendar.date(bySettingHour: 14, minute: 0, second: 0, of: today.addingTimeInterval(-86400))!
+        
+        return sleepData.filter { $0.startDate >= previousDay2PM }
     }
     
-    // Rounds up to the next hour
-    func roundedHourUp() -> Date {
-        Calendar.current.date(byAdding: .hour, value: 1, to: self.roundedHourDown())!
+    // Calculate the x-axis domain for the sleep chart based on filtered data
+    private var sleepXAxisDomain: ClosedRange<Date> {
+        let filteredData = sleepDataAfter2PMPreviousDay()
+        
+        guard let firstIntervalStart = filteredData.map(\.startDate).min(),
+              let lastIntervalEnd = filteredData.map(\.endDate).max() else {
+            let defaultDate = Calendar.current.startOfDay(for: Date())
+            return defaultDate...defaultDate
+        }
+        
+        // Set the domain to exactly match the range from the first interval to the last interval
+        return firstIntervalStart...lastIntervalEnd
     }
 }
