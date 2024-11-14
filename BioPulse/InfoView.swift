@@ -31,14 +31,14 @@ struct InfoView: View {
                     Text("Created by: Connor Frank")
                         .font(.title3)
                     
-                    Text("Build: \(appVersion) (\(buildNumber))") // Display version and build
+                    Text("Build: \(appVersion) (\(buildNumber))")
                         .font(.title3)
                 }
                 .padding(.top, 10)
                 
                 // GitHub Button
                 Button(action: {
-                    if let url = URL(string: "https://github.com/conjfrnk/biopulse") { // Replace with your GitHub link
+                    if let url = URL(string: "https://github.com/conjfrnk/biopulse") {
                         UIApplication.shared.open(url)
                     }
                 }) {
@@ -52,16 +52,31 @@ struct InfoView: View {
                     .cornerRadius(10)
                 }
                 
+                Button(action: {
+                    if let url = URL(string: "mailto:conjfrnk+biopulse@gmail.com") {
+                        UIApplication.shared.open(url)
+                    }
+                }) {
+                    HStack {
+                        Image(systemName: "mail")
+                        Text("Email me")
+                    }
+                    .font(.title3)
+                    .padding()
+                    .background(Color.blue.opacity(0.2))
+                    .cornerRadius(10)
+                }
+
                 Spacer()
             }
             .padding()
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: {
-                        presentationMode.wrappedValue.dismiss() // Dismiss the view
+                        presentationMode.wrappedValue.dismiss()
                     }) {
                         Image(systemName: "xmark")
-                            .foregroundColor(.blue) // Customize the color
+                            .foregroundColor(.blue)
                     }
                 }
             }
