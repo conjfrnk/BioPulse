@@ -48,11 +48,11 @@ struct SleepStagesChartView: View {
             
             let color: Color
             switch stage {
-                case "Awake": color = .red
-                case "REM": color = .blue.opacity(0.5)
-                case "Core": color = .blue
-                case "Deep": color = .purple
-                default: color = .gray
+            case "Awake": color = .red
+            case "REM": color = .blue.opacity(0.5)
+            case "Core": color = .blue
+            case "Deep": color = .purple
+            default: color = .gray
             }
             
             return (stage, color, formattedDuration, formattedPercentage)
@@ -76,9 +76,9 @@ struct SleepStagesChartView: View {
                     )
                     .foregroundStyle(
                         data.stage == "Awake" ? .red :
-                        data.stage == "REM" ? .blue.opacity(0.5) :
-                        data.stage == "Core" ? .blue :
-                        data.stage == "Deep" ? .purple : .gray
+                            data.stage == "REM" ? .blue.opacity(0.5) :
+                            data.stage == "Core" ? .blue :
+                            data.stage == "Deep" ? .purple : .gray
                     )
                 }
             }

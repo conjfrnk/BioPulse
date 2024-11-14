@@ -10,24 +10,36 @@ import SwiftUI
 struct ContentView: View {
     @State private var healthDataManager = HealthDataManager()
     @State private var authorizationStatus = "Not Requested"
-
+    
     var body: some View {
         TabView {
             DataView()
                 .tabItem {
-                    Image(systemName: "list.dash")
+                    Image(systemName: "list.bullet.rectangle.fill")
                     Text("Data")
                 }
-
+            
             TrendView()
                 .tabItem {
                     Image(systemName: "chart.bar")
                     Text("Trends")
                 }
-
+            
+            EnergyView()
+                .tabItem {
+                    Image(systemName: "bolt.heart.fill")
+                    Text("Energy")
+                }
+            
+            RecoveryView()
+                .tabItem {
+                    Image(systemName: "bed.double")
+                    Text("Recovery")
+                }
+            
             InsightsView()
                 .tabItem {
-                    Image(systemName: "lightbulb")
+                    Image(systemName: "chart.line.text.clipboard.fill")
                     Text("Insights")
                 }
         }
@@ -35,7 +47,7 @@ struct ContentView: View {
             requestHealthAuthorization()
         }
     }
-
+    
     private func requestHealthAuthorization() {
         healthDataManager.requestAuthorization { success, error in
             DispatchQueue.main.async {

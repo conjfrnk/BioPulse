@@ -1,24 +1,24 @@
 //
-//  InsightsView.swift
+//  EnergyView.swift
 //  BioPulse
 //
-//  Created by Connor Frank on 11/13/24.
+//  Created by Connor Frank on 11/14/24.
 //
 
 import SwiftUI
 
-struct InsightsView: View {
+struct EnergyView: View {
     @State private var showingSettings = false
     @State private var showingInfo = false
     
     var body: some View {
         NavigationView {
             VStack {
-                Text("Insights")
+                Text("Energy")
                     .font(.largeTitle)
                     .padding()
             }
-            .navigationTitle("Insights")
+            .navigationTitle("Energy")
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: {

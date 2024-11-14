@@ -19,7 +19,7 @@ class HealthDataManager: ObservableObject {  // Conform to ObservableObject
             completion(false, NSError(domain: "HealthKit not available", code: -1, userInfo: nil))
             return
         }
-
+        
         let stepType = HKObjectType.quantityType(forIdentifier: .stepCount)!
         let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!
         let typesToRead: Set = [stepType, sleepType]
@@ -33,13 +33,13 @@ class HealthDataManager: ObservableObject {  // Conform to ObservableObject
             completion(success, error)
         }
     }
-
+    
     // Fetch step count for the past week, returning a dictionary of dates and step counts
     func fetchWeeklySteps(from startDate: Date, completion: @escaping ([Date: Double]?, Error?) -> Void) {
         let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
         let endDate = Calendar.current.date(byAdding: .day, value: 7, to: startDate)!
         let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
-
+        
         let query = HKStatisticsCollectionQuery(
             quantityType: stepType,
             quantitySamplePredicate: predicate,
@@ -47,7 +47,7 @@ class HealthDataManager: ObservableObject {  // Conform to ObservableObject
             anchorDate: startDate,
             intervalComponents: DateComponents(day: 1)
         )
-
+        
         query.initialResultsHandler = { _, results, error in
             guard let results = results else {
                 completion(nil, error)
@@ -64,20 +64,20 @@ class HealthDataManager: ObservableObject {  // Conform to ObservableObject
         
         healthStore.execute(query)
     }
-
+    
     // Fetch sleep stages from the previous night
     func fetchLastNightSleepData(topSourceOnly: Bool = false, completion: @escaping ([(stage: String, startDate: Date, endDate: Date)]?, Error?) -> Void) {
         let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!
         let now = Date()
         let startOfYesterday = Calendar.current.startOfDay(for: Calendar.current.date(byAdding: .day, value: -1, to: now)!)
         let predicate = HKQuery.predicateForSamples(withStart: startOfYesterday, end: now, options: .strictStartDate)
-
+        
         let query = HKSampleQuery(sampleType: sleepType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, results, error in
             guard let results = results else {
                 completion(nil, error)
                 return
             }
-
+            
             var sleepData: [(stage: String, startDate: Date, endDate: Date)] = []
             let topSourceID = results.first?.sourceRevision.source.bundleIdentifier
             
@@ -86,7 +86,7 @@ class HealthDataManager: ObservableObject {  // Conform to ObservableObject
                     if topSourceOnly && sample.sourceRevision.source.bundleIdentifier != topSourceID {
                         continue // Skip samples from other sources if topSourceOnly is true
                     }
-
+                    
                     let stage: String
                     switch sample.value {
                     case HKCategoryValueSleepAnalysis.awake.rawValue:

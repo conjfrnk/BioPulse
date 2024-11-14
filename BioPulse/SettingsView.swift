@@ -9,7 +9,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(\.presentationMode) var presentationMode
-
+    
     var body: some View {
         NavigationView {
             VStack {

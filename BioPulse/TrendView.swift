@@ -10,7 +10,7 @@ import SwiftUI
 struct TrendView: View {
     @State private var showingSettings = false
     @State private var showingInfo = false
-
+    
     var body: some View {
         NavigationView {
             VStack {
