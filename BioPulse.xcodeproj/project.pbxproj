@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		B3C8FB912CE5AEE800D5A989 /* HealthDataManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3C8FB902CE5AEE800D5A989 /* HealthDataManager.swift */; };
+		B3C8FB9B2CE5C82D00D5A989 /* StepChartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3C8FB9A2CE5C82D00D5A989 /* StepChartView.swift */; };
+		B3C8FB9D2CE5C83E00D5A989 /* SleepChartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3C8FB9C2CE5C83E00D5A989 /* SleepChartView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -32,6 +34,8 @@
 		B3C8FB722CE5AE3D00D5A989 /* BioPulseTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BioPulseTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B3C8FB7C2CE5AE3D00D5A989 /* BioPulseUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BioPulseUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B3C8FB902CE5AEE800D5A989 /* HealthDataManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthDataManager.swift; sourceTree = "<group>"; };
+		B3C8FB9A2CE5C82D00D5A989 /* StepChartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StepChartView.swift; sourceTree = "<group>"; };
+		B3C8FB9C2CE5C83E00D5A989 /* SleepChartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepChartView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -80,6 +84,8 @@
 		B3C8FB592CE5AE3C00D5A989 = {
 			isa = PBXGroup;
 			children = (
+				B3C8FB9A2CE5C82D00D5A989 /* StepChartView.swift */,
+				B3C8FB9C2CE5C83E00D5A989 /* SleepChartView.swift */,
 				B3C8FB902CE5AEE800D5A989 /* HealthDataManager.swift */,
 				B3C8FB642CE5AE3C00D5A989 /* BioPulse */,
 				B3C8FB752CE5AE3D00D5A989 /* BioPulseTests */,
@@ -242,7 +248,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B3C8FB9D2CE5C83E00D5A989 /* SleepChartView.swift in Sources */,
 				B3C8FB912CE5AEE800D5A989 /* HealthDataManager.swift in Sources */,
+				B3C8FB9B2CE5C82D00D5A989 /* StepChartView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

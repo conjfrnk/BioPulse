@@ -20,6 +20,16 @@ struct SettingsView: View {
                     .font(.largeTitle)
                     .padding()
             }
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: {
+                        presentationMode.wrappedValue.dismiss() // Dismiss the view
+                    }) {
+                        Image(systemName: "xmark")
+                            .foregroundColor(.blue) // Optional: Customize the color
+                    }
+                }
+            }
         }
     }
 }
