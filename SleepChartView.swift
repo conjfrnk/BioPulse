@@ -8,8 +8,19 @@
 import SwiftUI
 import Charts
 
-struct SleepStagesChartView: View {
-    var sleepData: [(stage: String, startDate: Date, endDate: Date)]
+struct SleepStagesChartView: View, Equatable {
+    let sleepData: [(stage: String, startDate: Date, endDate: Date)]
+    
+    static func == (lhs: SleepStagesChartView, rhs: SleepStagesChartView) -> Bool {
+        // Compare sleep data entries
+        guard lhs.sleepData.count == rhs.sleepData.count else { return false }
+        
+        return zip(lhs.sleepData, rhs.sleepData).allSatisfy { lhsEntry, rhsEntry in
+            lhsEntry.stage == rhsEntry.stage &&
+            lhsEntry.startDate == rhsEntry.startDate &&
+            lhsEntry.endDate == rhsEntry.endDate
+        }
+    }
     
     // Calculate the formatted sleep interval text (start and end times) based on the filtered data
     private var sleepIntervalText: String {
@@ -27,9 +38,17 @@ struct SleepStagesChartView: View {
         return "Last Night's Sleep (\(startText) - \(endText))"
     }
     
-    // Calculate total sleep duration for the legend
+    // Calculate actual sleep time (excluding Awake and InBed)
     private var totalSleepTime: TimeInterval {
-        sleepDataAfter2PMPreviousDay().reduce(0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }
+        sleepDataAfter2PMPreviousDay()
+            .filter { $0.stage != "Awake" && $0.stage != "InBed" }
+            .reduce(0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }
+    }
+    
+    // Calculate total time in bed (including all stages)
+    private var totalTimeInBed: TimeInterval {
+        sleepDataAfter2PMPreviousDay()
+            .reduce(0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }
     }
     
     // Calculate duration and percentage for each sleep stage
@@ -40,10 +59,20 @@ struct SleepStagesChartView: View {
             let duration = filteredData
                 .filter { $0.stage == stage }
                 .reduce(0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }
-            let percentage = totalSleepTime > 0 ? (duration / totalSleepTime) * 100 : 0
+            
+            // Calculate percentage based on appropriate total
+            let percentage: Double
+            if stage == "Awake" {
+                // Calculate wake time as percentage of total time in bed
+                percentage = totalTimeInBed > 0 ? (duration / totalTimeInBed) * 100 : 0
+            } else {
+                // Calculate sleep stages as percentage of actual sleep time
+                percentage = totalSleepTime > 0 ? (duration / totalSleepTime) * 100 : 0
+            }
+            
             let hours = Int(duration) / 3600
             let minutes = (Int(duration) % 3600) / 60
-            let formattedDuration = String(format: "%02dh %02dm", hours, minutes)
+            let formattedDuration = String(format: "%dh %02dm", hours, minutes)
             let formattedPercentage = String(format: "%.1f%%", percentage)
             
             let color: Color
@@ -82,7 +111,7 @@ struct SleepStagesChartView: View {
                     )
                 }
             }
-            .chartXScale(domain: sleepXAxisDomain) // Set the x-axis domain for sleep chart
+            .chartXScale(domain: sleepXAxisDomain)
             .chartXAxis {
                 AxisMarks(values: .stride(by: .hour)) {
                     AxisGridLine()
@@ -90,33 +119,43 @@ struct SleepStagesChartView: View {
                 }
             }
             .chartYAxis {
-                AxisMarks(values: ["Awake", "REM", "Core", "Deep"]) // Explicitly set y-axis order
+                AxisMarks(values: ["Awake", "REM", "Core", "Deep"])
             }
-            .chartYScale(domain: ["Awake", "REM", "Core", "Deep"]) // Define the y-axis scale in the specified order
+            .chartYScale(domain: ["Awake", "REM", "Core", "Deep"])
             .frame(height: 200)
             .padding(.horizontal)
+            
+            // Add total sleep duration
+            Text("Total Sleep: \(formatDuration(totalSleepTime))")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .padding(.horizontal)
             
             // Custom legend with equal spacing across the screen
             HStack {
                 ForEach(sleepStageInfo, id: \.stage) { info in
                     VStack(alignment: .center, spacing: 4) {
-                        // Colored line for each stage
                         RoundedRectangle(cornerRadius: 4)
                             .fill(info.color)
-                            .frame(width: 40, height: 4) // Thin colored line with rounded corners
+                            .frame(width: 40, height: 4)
                         
-                        // Stage info text formatted as "Stage (XX%) \n HH MM"
                         Text("\(info.stage) (\(info.percentage))\n\(info.duration)")
                             .font(.footnote)
                             .multilineTextAlignment(.center)
                             .foregroundColor(.primary)
                     }
-                    .frame(maxWidth: .infinity) // Distribute each item evenly across the row
+                    .frame(maxWidth: .infinity)
                 }
             }
             .padding(.horizontal)
             .padding(.top, 8)
         }
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let hours = Int(duration) / 3600
+        let minutes = (Int(duration) % 3600) / 60
+        return String(format: "%dh %02dm", hours, minutes)
     }
     
     // Filter sleep data to only include entries starting from 2 PM the previous day
@@ -128,22 +167,18 @@ struct SleepStagesChartView: View {
         return sleepData.filter { $0.startDate >= previousDay2PM }
     }
     
-    // Calculate the x-axis domain for the sleep chart by rounding down the start and rounding up the end
     private var sleepXAxisDomain: ClosedRange<Date> {
         let nightSleepData = sleepDataAfter2PMPreviousDay()
         
         guard let start = nightSleepData.first?.startDate, let end = nightSleepData.last?.endDate else {
-            // If no data is available, return a default range for the past 24 hours
             let now = Date()
             let startOfDay = Calendar.current.startOfDay(for: now)
             let endOfDay = Calendar.current.date(byAdding: .hour, value: 24, to: startOfDay)!
             return startOfDay...endOfDay
         }
         
-        // Round the start time down to the previous hour
         let roundedStart = Calendar.current.date(bySettingHour: Calendar.current.component(.hour, from: start), minute: 0, second: 0, of: start) ?? start
         
-        // Round the end time up to the next hour
         var roundedEnd = Calendar.current.date(bySetting: .minute, value: 0, of: end) ?? end
         if roundedEnd < end {
             roundedEnd = Calendar.current.date(byAdding: .hour, value: 1, to: roundedEnd) ?? end

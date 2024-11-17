@@ -90,66 +90,118 @@ class HealthDataManager: ObservableObject {
             options: .strictStartDate
         )
         
-        // Create a descriptor to sort by source revision date (most recent first)
-        let sortBySource = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+        // Sort by start date and source revision date
+        let sortDescriptors = [
+            NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true),
+            NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: true)
+        ]
         
         let query = HKSampleQuery(
             sampleType: sleepType,
             predicate: predicate,
             limit: HKObjectQueryNoLimit,
-            sortDescriptors: [sortBySource]
+            sortDescriptors: sortDescriptors
         ) { _, samples, error in
             DispatchQueue.main.async {
                 if let error = error {
+                    print("[SLEEP] Error fetching sleep data: \(error.localizedDescription)")
                     completion(nil, error)
                     return
                 }
                 
                 guard let samples = samples as? [HKCategorySample] else {
+                    print("[SLEEP] No sleep samples found")
                     completion([], nil)
                     return
                 }
                 
-                // Group samples by source and use only the most recent source
+                // Group samples by source
                 let groupedBySource = Dictionary(grouping: samples) { sample in
                     sample.sourceRevision.source.bundleIdentifier
                 }
                 
-                // Get the most recent source's data
-                if let primarySourceData = groupedBySource.values.first {
-                    let sleepData = primarySourceData.compactMap { sample -> (stage: String, startDate: Date, endDate: Date)? in
-                        // Ensure the sample is within our time window
-                        guard sample.startDate >= startTime && sample.endDate <= endTime else {
-                            return nil
-                        }
-                        
-                        let stage: String
-                        switch sample.value {
-                        case HKCategoryValueSleepAnalysis.inBed.rawValue:
-                            stage = "InBed"
-                        case HKCategoryValueSleepAnalysis.asleepCore.rawValue:
-                            stage = "Core"
-                        case HKCategoryValueSleepAnalysis.asleepDeep.rawValue:
-                            stage = "Deep"
-                        case HKCategoryValueSleepAnalysis.asleepREM.rawValue:
-                            stage = "REM"
-                        case HKCategoryValueSleepAnalysis.awake.rawValue:
-                            stage = "Awake"
-                        default:
-                            stage = "Unknown"
-                        }
-                        
-                        // Log the duration for debugging
-                        let duration = sample.endDate.timeIntervalSince(sample.startDate) / 3600.0
-                        print("[SLEEP] Found \(stage) period: \(duration) hours from \(sample.startDate) to \(sample.endDate)")
-                        
-                        return (stage, sample.startDate, sample.endDate)
+                print("[SLEEP] Found data from \(groupedBySource.count) sources")
+                
+                // Find the source with the most detailed data
+                let bestSource = groupedBySource.max(by: { a, b in
+                    let aHasStages = a.value.contains { $0.value == HKCategoryValueSleepAnalysis.asleepDeep.rawValue ||
+                        $0.value == HKCategoryValueSleepAnalysis.asleepREM.rawValue }
+                    let bHasStages = b.value.contains { $0.value == HKCategoryValueSleepAnalysis.asleepDeep.rawValue ||
+                        $0.value == HKCategoryValueSleepAnalysis.asleepREM.rawValue }
+                    if aHasStages != bHasStages {
+                        return !aHasStages
+                    }
+                    return a.value.count < b.value.count
+                })?.value ?? []
+                
+                print("[SLEEP] Selected source with \(bestSource.count) samples")
+                
+                // Convert and merge overlapping intervals
+                var sleepData: [(stage: String, startDate: Date, endDate: Date)] = []
+                var currentStage: (stage: String, startDate: Date, endDate: Date)?
+                
+                for sample in bestSource.sorted(by: { $0.startDate < $1.startDate }) {
+                    let stage: String
+                    switch sample.value {
+                    case HKCategoryValueSleepAnalysis.inBed.rawValue:
+                        stage = "InBed"
+                    case HKCategoryValueSleepAnalysis.asleepCore.rawValue:
+                        stage = "Core"
+                    case HKCategoryValueSleepAnalysis.asleepDeep.rawValue:
+                        stage = "Deep"
+                    case HKCategoryValueSleepAnalysis.asleepREM.rawValue:
+                        stage = "REM"
+                    case HKCategoryValueSleepAnalysis.awake.rawValue:
+                        stage = "Awake"
+                    default:
+                        print("[SLEEP] Unknown sleep stage: \(sample.value)")
+                        continue
                     }
                     
-                    completion(sleepData, nil)
-                } else {
-                    completion([], nil)
+                    if let current = currentStage {
+                        if current.stage == stage && sample.startDate <= current.endDate {
+                            // Extend current interval
+                            currentStage?.endDate = max(current.endDate, sample.endDate)
+                        } else {
+                            // Add current interval and start new one
+                            sleepData.append(current)
+                            currentStage = (stage, sample.startDate, sample.endDate)
+                        }
+                    } else {
+                        currentStage = (stage, sample.startDate, sample.endDate)
+                    }
                 }
+                
+                // Add the last interval
+                if let last = currentStage {
+                    sleepData.append(last)
+                }
+                
+                // Fill gaps with Awake stages
+                var filledSleepData: [(stage: String, startDate: Date, endDate: Date)] = []
+                var lastEnd = startTime
+                
+                for interval in sleepData {
+                    if interval.startDate > lastEnd {
+                        // Add Awake interval for the gap
+                        filledSleepData.append(("Awake", lastEnd, interval.startDate))
+                    }
+                    filledSleepData.append(interval)
+                    lastEnd = interval.endDate
+                }
+                
+                // Add final Awake interval if needed
+                if lastEnd < endTime {
+                    filledSleepData.append(("Awake", lastEnd, endTime))
+                }
+                
+                print("[SLEEP] Processed \(filledSleepData.count) intervals")
+                for interval in filledSleepData {
+                    let duration = interval.endDate.timeIntervalSince(interval.startDate) / 3600.0
+                    print("[SLEEP] \(interval.stage): \(String(format: "%.2f", duration))h (\(interval.startDate) to \(interval.endDate))")
+                }
+                
+                completion(filledSleepData, nil)
             }
         }
         

@@ -461,41 +461,60 @@ struct RecoveryView: View {
         // Initialize base score
         var score = 100
         
-        // 1. Calculate total sleep and stage proportions
-        let totalSleep = sleepData.reduce(0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }
-        let hoursSlept = totalSleep / 3600
+        // 1. Calculate total sleep duration (excluding Awake and InBed)
+        let totalSleepDuration = sleepData
+            .filter { $0.stage != "Awake" && $0.stage != "InBed" }
+            .reduce(0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }
+        
+        let hoursSlept = totalSleepDuration / 3600
         print("[SCORE] Total sleep duration: \(hoursSlept) hours")
         
-        // 2. Score sleep stages
+        // Calculate durations for each stage
+        var stageDurations: [String: TimeInterval] = [:]
         for stage in ["Deep", "REM", "Core", "Awake"] {
-            let stageDuration = sleepData
+            let duration = sleepData
                 .filter { $0.stage == stage }
                 .reduce(0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }
-            let proportion = totalSleep > 0 ? stageDuration / totalSleep : 0
+            stageDurations[stage] = duration
             
-            switch stage {
-            case "Deep":
-                if proportion < 0.13 {
-                    score -= 15
-                    print("[SCORE] Deducting 15 points for insufficient deep sleep (\(Int(proportion * 100))%)")
-                }
-            case "REM":
-                if proportion < 0.20 {
-                    score -= 15
-                    print("[SCORE] Deducting 15 points for insufficient REM sleep (\(Int(proportion * 100))%)")
-                }
-            case "Core":
-                if proportion < 0.45 {
-                    score -= 10
-                    print("[SCORE] Deducting 10 points for insufficient core sleep (\(Int(proportion * 100))%)")
-                }
-            case "Awake":
-                if proportion > 0.10 {
-                    score -= 10
-                    print("[SCORE] Deducting 10 points for excessive wake time (\(Int(proportion * 100))%)")
-                }
-            default:
-                break
+            // Calculate and log percentage of total sleep time (excluding awake time)
+            if stage != "Awake" {
+                let percentage = totalSleepDuration > 0 ? (duration / totalSleepDuration) * 100 : 0
+                print("[SCORE] \(stage) sleep: \(duration/3600.0) hours (\(Int(percentage))% of total sleep)")
+            }
+        }
+        
+        // 2. Score sleep stages (as percentage of total sleep time)
+        if totalSleepDuration > 0 {
+            // Deep sleep (target: 13-25%)
+            let deepPct = stageDurations["Deep"]! / totalSleepDuration
+            if deepPct < 0.13 {
+                score -= 15
+                print("[SCORE] Deducting 15 points for insufficient deep sleep (\(Int(deepPct * 100))%)")
+            }
+            
+            // REM sleep (target: 20-35%)
+            let remPct = stageDurations["REM"]! / totalSleepDuration
+            if remPct < 0.20 {
+                score -= 15
+                print("[SCORE] Deducting 15 points for insufficient REM sleep (\(Int(remPct * 100))%)")
+            }
+            
+            // Core sleep (target: 45-55%)
+            let corePct = stageDurations["Core"]! / totalSleepDuration
+            if corePct < 0.45 {
+                score -= 10
+                print("[SCORE] Deducting 10 points for insufficient core sleep (\(Int(corePct * 100))%)")
+            }
+        }
+        
+        // Calculate wake percentage relative to total time in bed
+        let totalTimeInBed = sleepData.reduce(0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }
+        if totalTimeInBed > 0 {
+            let wakePct = stageDurations["Awake"]! / totalTimeInBed
+            if wakePct > 0.10 {
+                score -= 10
+                print("[SCORE] Deducting 10 points for excessive wake time (\(Int(wakePct * 100))% of time in bed)")
             }
         }
         
