@@ -352,6 +352,9 @@ struct RecoveryView: View {
         var currentDate = startingFrom
         var datesProcessed = 0
         
+        // Get the user's sleep goal
+        let sleepGoalMinutes = UserDefaults.standard.integer(forKey: "sleepGoal")
+        
         while datesProcessed < count {
             let dateToProcess = calendar.startOfDay(for: currentDate)
             let dateString = dateFormatter.string(from: dateToProcess)
@@ -370,32 +373,44 @@ struct RecoveryView: View {
                     if let sleepData = sleepData, !sleepData.isEmpty {
                         print("[DATA] Found \(sleepData.count) sleep records for \(dateString)")
                         
-                        // Calculate total sleep duration excluding gaps
                         let sortedSleepData = sleepData.sorted { $0.startDate < $1.startDate }
                         var totalDuration: TimeInterval = 0
                         
+                        // Calculate sleep period
+                        guard let sleepStart = sortedSleepData.first?.startDate,
+                              let sleepEnd = sortedSleepData.last?.endDate else {
+                            group.leave()
+                            return
+                        }
+                        
+                        // Calculate total sleep duration excluding gaps
                         for (stage, start, end) in sortedSleepData {
-                            if stage != "Awake" && stage != "InBed" {  // Only count actual sleep stages
+                            if stage != "Awake" && stage != "InBed" {
                                 let duration = end.timeIntervalSince(start)
                                 print("[DURATION] Adding \(duration/3600.0) hours from \(stage)")
                                 totalDuration += duration
                             }
                         }
                         
-                        let score = calculateSleepScore(sleepData: sleepData)
-                        print("[DATA] Calculated sleep score: \(score) for \(dateString)")
-                        
-                        healthDataManager.fetchHRV(for: dateToProcess) { hrv, hrvError in
+                        // Fetch HRV and RHR specifically during the sleep period
+                        healthDataManager.fetchHRVDuringSleep(sleepStart: sleepStart, sleepEnd: sleepEnd) { hrv, hrvError in
                             if let hrvError = hrvError {
                                 print("[ERROR] HRV fetch failed: \(hrvError.localizedDescription)")
                             }
-                            print("[DATA] HRV value: \(hrv ?? 0) for \(dateString)")
+                            print("[DATA] HRV value during sleep: \(hrv ?? 0) for \(dateString)")
                             
-                            healthDataManager.fetchRestingHeartRate(for: dateToProcess) { heartRate, hrError in
+                            healthDataManager.fetchHeartRateDuringSleep(sleepStart: sleepStart, sleepEnd: sleepEnd) { heartRate, hrError in
                                 if let hrError = hrError {
                                     print("[ERROR] Heart rate fetch failed: \(hrError.localizedDescription)")
                                 }
-                                print("[DATA] Resting heart rate: \(heartRate ?? 0) for \(dateString)")
+                                print("[DATA] Resting heart rate during sleep: \(heartRate ?? 0) for \(dateString)")
+                                
+                                let score = calculateSleepScore(
+                                    sleepData: sleepData,
+                                    hrv: hrv,
+                                    rhr: heartRate,
+                                    sleepGoalMinutes: sleepGoalMinutes
+                                )
                                 
                                 let nightData = NightData(
                                     date: dateToProcess,
@@ -403,14 +418,14 @@ struct RecoveryView: View {
                                     hrv: hrv ?? 0,
                                     restingHeartRate: heartRate ?? 0,
                                     sleepDuration: totalDuration,
-                                    sleepStartTime: sortedSleepData.first?.startDate ?? dateToProcess,
-                                    sleepEndTime: sortedSleepData.last?.endDate ?? dateToProcess
+                                    sleepStartTime: sleepStart,
+                                    sleepEndTime: sleepEnd
                                 )
                                 
                                 DispatchQueue.main.async {
                                     print("[DATA] Adding night data for \(dateString)")
                                     print("[DATA] Sleep duration: \(totalDuration/3600.0) hours")
-                                    print("[DATA] Sleep period: \(sortedSleepData.first?.startDate ?? dateToProcess) to \(sortedSleepData.last?.endDate ?? dateToProcess)")
+                                    print("[DATA] Sleep period: \(sleepStart) to \(sleepEnd)")
                                     loadedDates.insert(dateString)
                                     newNights.append(nightData)
                                 }
@@ -437,12 +452,21 @@ struct RecoveryView: View {
         }
     }
     
-    private func calculateSleepScore(sleepData: [(stage: String, startDate: Date, endDate: Date)]) -> Int {
-        let totalSleep = sleepData.reduce(0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }
-        print("[SCORE] Total sleep duration: \(totalSleep/3600) hours")
-        
+    private func calculateSleepScore(
+        sleepData: [(stage: String, startDate: Date, endDate: Date)],
+        hrv: Double?,
+        rhr: Double?,
+        sleepGoalMinutes: Int
+    ) -> Int {
+        // Initialize base score
         var score = 100
         
+        // 1. Calculate total sleep and stage proportions
+        let totalSleep = sleepData.reduce(0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }
+        let hoursSlept = totalSleep / 3600
+        print("[SCORE] Total sleep duration: \(hoursSlept) hours")
+        
+        // 2. Score sleep stages
         for stage in ["Deep", "REM", "Core", "Awake"] {
             let stageDuration = sleepData
                 .filter { $0.stage == stage }
@@ -451,24 +475,65 @@ struct RecoveryView: View {
             
             switch stage {
             case "Deep":
-                if proportion < 0.13 { score -= 20 }
+                if proportion < 0.13 {
+                    score -= 15
+                    print("[SCORE] Deducting 15 points for insufficient deep sleep (\(Int(proportion * 100))%)")
+                }
             case "REM":
-                if proportion < 0.20 { score -= 15 }
+                if proportion < 0.20 {
+                    score -= 15
+                    print("[SCORE] Deducting 15 points for insufficient REM sleep (\(Int(proportion * 100))%)")
+                }
             case "Core":
-                if proportion < 0.45 { score -= 10 }
+                if proportion < 0.45 {
+                    score -= 10
+                    print("[SCORE] Deducting 10 points for insufficient core sleep (\(Int(proportion * 100))%)")
+                }
             case "Awake":
-                if proportion > 0.10 { score -= 15 }
+                if proportion > 0.10 {
+                    score -= 10
+                    print("[SCORE] Deducting 10 points for excessive wake time (\(Int(proportion * 100))%)")
+                }
             default:
                 break
             }
         }
         
-        // Adjust for total sleep duration
-        let hoursSlept = totalSleep / 3600
-        if hoursSlept < 7 {
-            score -= Int((7 - hoursSlept) * 10)
+        // 3. Score total sleep duration relative to goal
+        let sleepGoalHours = Double(sleepGoalMinutes) / 60.0
+        let durationScore = min(25, Int(25.0 * (hoursSlept / sleepGoalHours)))
+        score = score - 25 + durationScore
+        print("[SCORE] Sleep duration score: \(durationScore)/25 (Goal: \(sleepGoalHours)h, Actual: \(hoursSlept)h)")
+        
+        // 4. Score HRV (if available)
+        if let hrv = hrv {
+            if hrv < 20 {
+                score -= 10
+                print("[SCORE] Deducting 10 points for very low HRV (\(Int(hrv)) ms)")
+            } else if hrv < 30 {
+                score -= 5
+                print("[SCORE] Deducting 5 points for low HRV (\(Int(hrv)) ms)")
+            }
+        } else {
+            score -= 5
+            print("[SCORE] Deducting 5 points for missing HRV data")
         }
         
+        // 5. Score RHR (if available)
+        if let rhr = rhr {
+            if rhr > 80 {
+                score -= 10
+                print("[SCORE] Deducting 10 points for high RHR (\(Int(rhr)) bpm)")
+            } else if rhr > 70 {
+                score -= 5
+                print("[SCORE] Deducting 5 points for elevated RHR (\(Int(rhr)) bpm)")
+            }
+        } else {
+            score -= 5
+            print("[SCORE] Deducting 5 points for missing RHR data")
+        }
+        
+        print("[SCORE] Final sleep score: \(max(0, min(100, score)))")
         return max(0, min(100, score))
     }
 }

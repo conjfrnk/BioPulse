@@ -11,7 +11,7 @@ class HealthDataManager: ObservableObject {
     private let healthStore = HKHealthStore()
     private let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!
     private let hrvType = HKObjectType.quantityType(forIdentifier: .heartRateVariabilitySDNN)!
-    private let heartRateType = HKObjectType.quantityType(forIdentifier: .restingHeartRate)!
+    private let heartRateType = HKObjectType.quantityType(forIdentifier: .heartRate)! // Changed from restingHeartRate
     private let stepType = HKObjectType.quantityType(forIdentifier: .stepCount)!
     
     func requestAuthorization(completion: @escaping (Bool, Error?) -> Void) {
@@ -156,20 +156,16 @@ class HealthDataManager: ObservableObject {
         healthStore.execute(query)
     }
     
-    func fetchHRV(
-        for date: Date,
+    func fetchHRVDuringSleep(
+        sleepStart: Date,
+        sleepEnd: Date,
         completion: @escaping (Double?, Error?) -> Void
     ) {
-        let calendar = Calendar.current
-        // Focus on the sleep period: 6PM to 10AM
-        let startTime = calendar.date(bySettingHour: 18, minute: 0, second: 0, of: calendar.date(byAdding: .day, value: -1, to: date)!)!
-        let endTime = calendar.date(bySettingHour: 10, minute: 0, second: 0, of: date)!
-        
-        print("[HRV] Fetching HRV between \(startTime) and \(endTime)")
+        print("[HRV] Fetching HRV between \(sleepStart) and \(sleepEnd)")
         
         let predicate = HKQuery.predicateForSamples(
-            withStart: startTime,
-            end: endTime,
+            withStart: sleepStart,
+            end: sleepEnd,
             options: .strictStartDate
         )
         
@@ -186,9 +182,9 @@ class HealthDataManager: ObservableObject {
                 
                 let hrv = statistics?.averageQuantity()?.doubleValue(for: HKUnit.secondUnit(with: .milli))
                 if let hrv = hrv {
-                    print("[HRV] Average HRV: \(hrv) ms")
+                    print("[HRV] Average HRV during sleep: \(hrv) ms")
                 } else {
-                    print("[HRV] No HRV data found")
+                    print("[HRV] No HRV data found during sleep period")
                 }
                 completion(hrv, nil)
             }
@@ -197,44 +193,73 @@ class HealthDataManager: ObservableObject {
         healthStore.execute(query)
     }
     
-    func fetchRestingHeartRate(
-        for date: Date,
+    func fetchHeartRateDuringSleep(
+        sleepStart: Date,
+        sleepEnd: Date,
         completion: @escaping (Double?, Error?) -> Void
     ) {
-        let calendar = Calendar.current
-        // Focus on the sleep period: 6PM to 10AM
-        let startTime = calendar.date(bySettingHour: 18, minute: 0, second: 0, of: calendar.date(byAdding: .day, value: -1, to: date)!)!
-        let endTime = calendar.date(bySettingHour: 10, minute: 0, second: 0, of: date)!
-        
-        print("[RHR] Fetching resting heart rate between \(startTime) and \(endTime)")
+        print("[HR] Fetching heart rate between \(sleepStart) and \(sleepEnd)")
         
         let predicate = HKQuery.predicateForSamples(
-            withStart: startTime,
-            end: endTime,
+            withStart: sleepStart,
+            end: sleepEnd,
             options: .strictStartDate
         )
         
-        let query = HKStatisticsQuery(
+        // Use statistics collection query to get average heart rate over time
+        let interval = DateComponents(minute: 5) // Group by 5-minute intervals
+        let query = HKStatisticsCollectionQuery(
             quantityType: heartRateType,
             quantitySamplePredicate: predicate,
-            options: .discreteAverage
-        ) { _, statistics, error in
+            options: .discreteAverage,
+            anchorDate: sleepStart,
+            intervalComponents: interval
+        )
+        
+        query.initialResultsHandler = { query, results, error in
             DispatchQueue.main.async {
                 if let error = error {
+                    print("[HR] Error fetching heart rate: \(error.localizedDescription)")
                     completion(nil, error)
                     return
                 }
                 
-                let heartRate = statistics?.averageQuantity()?.doubleValue(for: HKUnit.count().unitDivided(by: .minute()))
-                if let heartRate = heartRate {
-                    print("[RHR] Average resting heart rate: \(heartRate) bpm")
-                } else {
-                    print("[RHR] No resting heart rate data found")
+                guard let results = results else {
+                    print("[HR] No results found")
+                    completion(nil, nil)
+                    return
                 }
-                completion(heartRate, nil)
+                
+                var heartRates: [Double] = []
+                results.enumerateStatistics(from: sleepStart, to: sleepEnd) { statistics, stop in
+                    if let quantity = statistics.averageQuantity() {
+                        let hr = quantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute()))
+                        // Only include reasonable heart rates (filter out potential errors)
+                        if hr >= 30 && hr <= 120 {
+                            heartRates.append(hr)
+                        }
+                    }
+                }
+                
+                // Calculate the average of the lowest 10% of heart rates
+                // This better approximates resting heart rate during sleep
+                if !heartRates.isEmpty {
+                    heartRates.sort()
+                    let lowestCount = max(1, Int(Double(heartRates.count) * 0.1))
+                    let lowestHeartRates = Array(heartRates.prefix(lowestCount))
+                    let averageHR = lowestHeartRates.reduce(0, +) / Double(lowestHeartRates.count)
+                    
+                    print("[HR] Found \(heartRates.count) measurements")
+                    print("[HR] Average of lowest 10% heart rates: \(averageHR) bpm")
+                    completion(averageHR, nil)
+                } else {
+                    print("[HR] No valid heart rate measurements found")
+                    completion(nil, nil)
+                }
             }
         }
         
         healthStore.execute(query)
     }
+    
 }
