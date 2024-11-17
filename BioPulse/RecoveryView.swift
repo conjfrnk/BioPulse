@@ -173,7 +173,6 @@ struct NightsList: View {
                 Color.clear
                     .frame(height: 50)
                     .onAppear {
-                        print("[PAGINATION] Reached end of list, loading more nights")
                         loadMore()
                     }
             }
@@ -181,9 +180,6 @@ struct NightsList: View {
             if isLoading {
                 ProgressView()
                     .padding()
-                    .onAppear {
-                        print("[UI] Loading indicator visible")
-                    }
             }
         }
         .padding(.vertical)
@@ -211,8 +207,8 @@ struct MainScrollView: View {
                     return Color.clear
                 }
             )
-            .onChange(of: showScrollToTop) { show in
-                if !show {
+            .onChange(of: showScrollToTop) { oldValue, newValue in
+                if !newValue {
                     withAnimation {
                         proxy.scrollTo("top", anchor: .top)
                     }
@@ -374,47 +370,53 @@ struct RecoveryView: View {
                     
                     if let sleepData = sleepData, !sleepData.isEmpty {
                         print("[DATA] Found \(sleepData.count) sleep records for \(dateString)")
-                        let previousDay2PM = calendar.date(bySettingHour: 14, minute: 0, second: 0, of: dateToProcess.addingTimeInterval(-86400))!
-                        let filteredSleepData = sleepData.filter { $0.startDate >= previousDay2PM }
-                        print("[DATA] Filtered to \(filteredSleepData.count) records after 2PM previous day")
                         
-                        if !filteredSleepData.isEmpty {
-                            let score = calculateSleepScore(sleepData: filteredSleepData)
-                            print("[DATA] Calculated sleep score: \(score) for \(dateString)")
-                            
-                            healthDataManager.fetchHRV(for: dateToProcess) { hrv, hrvError in
-                                if let hrvError = hrvError {
-                                    print("[ERROR] HRV fetch failed: \(hrvError.localizedDescription)")
-                                }
-                                print("[DATA] HRV value: \(hrv ?? 0) for \(dateString)")
-                                
-                                healthDataManager.fetchRestingHeartRate(for: dateToProcess) { heartRate, hrError in
-                                    if let hrError = hrError {
-                                        print("[ERROR] Heart rate fetch failed: \(hrError.localizedDescription)")
-                                    }
-                                    print("[DATA] Resting heart rate: \(heartRate ?? 0) for \(dateString)")
-                                    
-                                    let nightData = NightData(
-                                        date: dateToProcess,
-                                        sleepScore: score,
-                                        hrv: hrv ?? 0,
-                                        restingHeartRate: heartRate ?? 0,
-                                        sleepDuration: filteredSleepData.reduce(0) { $0 + $1.endDate.timeIntervalSince($1.startDate) },
-                                        sleepStartTime: filteredSleepData.first?.startDate ?? dateToProcess,
-                                        sleepEndTime: filteredSleepData.last?.endDate ?? dateToProcess
-                                    )
-                                    
-                                    DispatchQueue.main.async {
-                                        print("[DATA] Adding night data for \(dateString)")
-                                        loadedDates.insert(dateString)
-                                        newNights.append(nightData)
-                                    }
-                                    group.leave()
-                                }
+                        // Calculate total sleep duration excluding gaps
+                        let sortedSleepData = sleepData.sorted { $0.startDate < $1.startDate }
+                        var totalDuration: TimeInterval = 0
+                        
+                        for (stage, start, end) in sortedSleepData {
+                            if stage != "Awake" && stage != "InBed" {  // Only count actual sleep stages
+                                let duration = end.timeIntervalSince(start)
+                                print("[DURATION] Adding \(duration/3600.0) hours from \(stage)")
+                                totalDuration += duration
                             }
-                        } else {
-                            print("[DATA] No sleep data found after filtering for \(dateString)")
-                            group.leave()
+                        }
+                        
+                        let score = calculateSleepScore(sleepData: sleepData)
+                        print("[DATA] Calculated sleep score: \(score) for \(dateString)")
+                        
+                        healthDataManager.fetchHRV(for: dateToProcess) { hrv, hrvError in
+                            if let hrvError = hrvError {
+                                print("[ERROR] HRV fetch failed: \(hrvError.localizedDescription)")
+                            }
+                            print("[DATA] HRV value: \(hrv ?? 0) for \(dateString)")
+                            
+                            healthDataManager.fetchRestingHeartRate(for: dateToProcess) { heartRate, hrError in
+                                if let hrError = hrError {
+                                    print("[ERROR] Heart rate fetch failed: \(hrError.localizedDescription)")
+                                }
+                                print("[DATA] Resting heart rate: \(heartRate ?? 0) for \(dateString)")
+                                
+                                let nightData = NightData(
+                                    date: dateToProcess,
+                                    sleepScore: score,
+                                    hrv: hrv ?? 0,
+                                    restingHeartRate: heartRate ?? 0,
+                                    sleepDuration: totalDuration,
+                                    sleepStartTime: sortedSleepData.first?.startDate ?? dateToProcess,
+                                    sleepEndTime: sortedSleepData.last?.endDate ?? dateToProcess
+                                )
+                                
+                                DispatchQueue.main.async {
+                                    print("[DATA] Adding night data for \(dateString)")
+                                    print("[DATA] Sleep duration: \(totalDuration/3600.0) hours")
+                                    print("[DATA] Sleep period: \(sortedSleepData.first?.startDate ?? dateToProcess) to \(sortedSleepData.last?.endDate ?? dateToProcess)")
+                                    loadedDates.insert(dateString)
+                                    newNights.append(nightData)
+                                }
+                                group.leave()
+                            }
                         }
                     } else {
                         print("[DATA] No sleep data found for \(dateString)")
