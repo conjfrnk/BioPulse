@@ -144,7 +144,7 @@ class HealthDataManager: ObservableObject {
                     let stage: String
                     switch sample.value {
                     case HKCategoryValueSleepAnalysis.inBed.rawValue:
-                        stage = "InBed"
+                        continue // Skip "InBed" stages
                     case HKCategoryValueSleepAnalysis.asleepCore.rawValue:
                         stage = "Core"
                     case HKCategoryValueSleepAnalysis.asleepDeep.rawValue:
@@ -177,31 +177,16 @@ class HealthDataManager: ObservableObject {
                     sleepData.append(last)
                 }
                 
-                // Fill gaps with Awake stages
-                var filledSleepData: [(stage: String, startDate: Date, endDate: Date)] = []
-                var lastEnd = startTime
+                // Sort final data chronologically
+                let sortedSleepData = sleepData.sorted { $0.startDate < $1.startDate }
                 
-                for interval in sleepData {
-                    if interval.startDate > lastEnd {
-                        // Add Awake interval for the gap
-                        filledSleepData.append(("Awake", lastEnd, interval.startDate))
-                    }
-                    filledSleepData.append(interval)
-                    lastEnd = interval.endDate
-                }
-                
-                // Add final Awake interval if needed
-                if lastEnd < endTime {
-                    filledSleepData.append(("Awake", lastEnd, endTime))
-                }
-                
-                print("[SLEEP] Processed \(filledSleepData.count) intervals")
-                for interval in filledSleepData {
+                print("[SLEEP] Processed \(sortedSleepData.count) intervals")
+                for interval in sortedSleepData {
                     let duration = interval.endDate.timeIntervalSince(interval.startDate) / 3600.0
                     print("[SLEEP] \(interval.stage): \(String(format: "%.2f", duration))h (\(interval.startDate) to \(interval.endDate))")
                 }
                 
-                completion(filledSleepData, nil)
+                completion(sortedSleepData, nil)
             }
         }
         
