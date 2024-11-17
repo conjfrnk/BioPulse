@@ -78,9 +78,11 @@ struct DataView: View {
         }
     }
 
-    // Load sleep data for the previous night, using only the top data source
+    // Load sleep data for the previous night
     private func loadSleepData() {
-        healthDataManager.fetchLastNightSleepData(topSourceOnly: true) { data, error in
+        // Get today's date for sleep data
+        let today = Date()
+        healthDataManager.fetchSleepData(for: today) { data, error in
             if let data = data {
                 DispatchQueue.main.async {
                     sleepData = data

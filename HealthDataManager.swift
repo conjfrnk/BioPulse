@@ -11,7 +11,6 @@ import Combine
 class HealthDataManager: ObservableObject {  // Conform to ObservableObject
     let healthStore = HKHealthStore()
     
-    
     // Request authorization for HealthKit data
     func requestAuthorization(completion: @escaping (Bool, Error?) -> Void) {
         guard HKHealthStore.isHealthDataAvailable() else {
@@ -22,7 +21,10 @@ class HealthDataManager: ObservableObject {  // Conform to ObservableObject
         
         let stepType = HKObjectType.quantityType(forIdentifier: .stepCount)!
         let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!
-        let typesToRead: Set = [stepType, sleepType]
+        let hrvType = HKObjectType.quantityType(forIdentifier: .heartRateVariabilitySDNN)!
+        let restingHRType = HKObjectType.quantityType(forIdentifier: .restingHeartRate)!
+        
+        let typesToRead: Set = [stepType, sleepType, hrvType, restingHRType]
         
         healthStore.requestAuthorization(toShare: [], read: typesToRead) { (success, error) in
             if success {
@@ -65,28 +67,80 @@ class HealthDataManager: ObservableObject {  // Conform to ObservableObject
         healthStore.execute(query)
     }
     
-    // Fetch sleep stages from the previous night
-    func fetchLastNightSleepData(topSourceOnly: Bool = false, completion: @escaping ([(stage: String, startDate: Date, endDate: Date)]?, Error?) -> Void) {
-        let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!
-        let now = Date()
-        let startOfYesterday = Calendar.current.startOfDay(for: Calendar.current.date(byAdding: .day, value: -1, to: now)!)
-        let predicate = HKQuery.predicateForSamples(withStart: startOfYesterday, end: now, options: .strictStartDate)
+    // Fetch HRV for a specific date
+    func fetchHRV(for date: Date, completion: @escaping (Double?, Error?) -> Void) {
+        let hrvType = HKQuantityType.quantityType(forIdentifier: .heartRateVariabilitySDNN)!
+        let predicate = HKQuery.predicateForSamples(
+            withStart: Calendar.current.startOfDay(for: date),
+            end: Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: date)),
+            options: .strictStartDate
+        )
         
-        let query = HKSampleQuery(sampleType: sleepType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, results, error in
-            guard let results = results else {
+        let query = HKStatisticsQuery(
+            quantityType: hrvType,
+            quantitySamplePredicate: predicate,
+            options: .discreteAverage
+        ) { _, statistics, error in
+            let hrv = statistics?.averageQuantity()?.doubleValue(for: HKUnit.secondUnit(with: .milli))
+            completion(hrv, error)
+        }
+        
+        healthStore.execute(query)
+    }
+    
+    // Fetch resting heart rate for a specific date
+    func fetchRestingHeartRate(for date: Date, completion: @escaping (Double?, Error?) -> Void) {
+        let heartRateType = HKQuantityType.quantityType(forIdentifier: .restingHeartRate)!
+        let predicate = HKQuery.predicateForSamples(
+            withStart: Calendar.current.startOfDay(for: date),
+            end: Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: date)),
+            options: .strictStartDate
+        )
+        
+        let query = HKStatisticsQuery(
+            quantityType: heartRateType,
+            quantitySamplePredicate: predicate,
+            options: .discreteAverage
+        ) { _, statistics, error in
+            let heartRate = statistics?.averageQuantity()?.doubleValue(for: HKUnit.count().unitDivided(by: .minute()))
+            completion(heartRate, error)
+        }
+        
+        healthStore.execute(query)
+    }
+    
+    // Fetch sleep data for a specific date
+    func fetchSleepData(for date: Date, completion: @escaping ([(stage: String, startDate: Date, endDate: Date)]?, Error?) -> Void) {
+        let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!
+        
+        // Get 2 PM of previous day to 2 PM of the specified date
+        let calendar = Calendar.current
+        let twoPM = calendar.date(bySettingHour: 14, minute: 0, second: 0, of: date)!
+        let previousDay2PM = calendar.date(byAdding: .day, value: -1, to: twoPM)!
+        
+        let predicate = HKQuery.predicateForSamples(
+            withStart: previousDay2PM,
+            end: twoPM,
+            options: .strictStartDate
+        )
+        
+        let query = HKSampleQuery(
+            sampleType: sleepType,
+            predicate: predicate,
+            limit: HKObjectQueryNoLimit,
+            sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]
+        ) { _, samples, error in
+            guard let samples = samples else {
                 completion(nil, error)
                 return
             }
             
             var sleepData: [(stage: String, startDate: Date, endDate: Date)] = []
-            let topSourceID = results.first?.sourceRevision.source.bundleIdentifier
+            let validSources = ["com.apple.health", "com.apple.health.preview"]
             
-            for sample in results {
-                if let sample = sample as? HKCategorySample {
-                    if topSourceOnly && sample.sourceRevision.source.bundleIdentifier != topSourceID {
-                        continue // Skip samples from other sources if topSourceOnly is true
-                    }
-                    
+            for sample in samples {
+                if let sample = sample as? HKCategorySample,
+                   validSources.contains(sample.sourceRevision.source.bundleIdentifier) {
                     let stage: String
                     switch sample.value {
                     case HKCategoryValueSleepAnalysis.awake.rawValue:
