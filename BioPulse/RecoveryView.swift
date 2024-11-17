@@ -60,9 +60,6 @@ struct NightCardView: View {
                         .font(.system(size: 14, weight: .bold))
                 }
             }
-            .onAppear {
-                print("[UI] Card appeared for date: \(dateFormatter.string(from: nightData.date))")
-            }
             
             HStack {
                 Text("\(timeFormatter.string(from: nightData.sleepStartTime)) - \(timeFormatter.string(from: nightData.sleepEndTime))")
@@ -159,20 +156,17 @@ struct NightsList: View {
     
     var body: some View {
         LazyVStack(spacing: 16) {
-            Color.clear
-                .frame(height: 0)
-                .id("top")
-            
-            ForEach(nights) { night in
+            ForEach(nights.sorted(by: { $0.date > $1.date })) { night in
                 NightCardView(nightData: night)
                     .padding(.horizontal)
                     .id(night.id)
             }
             
-            if !nights.isEmpty {
+            if !nights.isEmpty && !isLoading {
                 Color.clear
-                    .frame(height: 50)
+                    .frame(height: 20)
                     .onAppear {
+                        print("[PAGINATION] Reached bottom of list")
                         loadMore()
                     }
             }
@@ -197,12 +191,19 @@ struct MainScrollView: View {
             ScrollView {
                 NightsList(nights: nights, loadMore: loadMore, isLoading: isLoading)
             }
+            .scrollDismissesKeyboard(.immediately)
             .coordinateSpace(name: "scroll")
             .overlay(
                 GeometryReader { geometry -> Color in
                     let offset = geometry.frame(in: .named("scroll")).minY
-                    DispatchQueue.main.async {
-                        showScrollToTop = offset < -200
+                    if offset < -200 && !showScrollToTop {
+                        DispatchQueue.main.async {
+                            showScrollToTop = true
+                        }
+                    } else if offset >= -200 && showScrollToTop {
+                        DispatchQueue.main.async {
+                            showScrollToTop = false
+                        }
                     }
                     return Color.clear
                 }
@@ -210,7 +211,7 @@ struct MainScrollView: View {
             .onChange(of: showScrollToTop) { oldValue, newValue in
                 if !newValue {
                     withAnimation {
-                        proxy.scrollTo("top", anchor: .top)
+                        proxy.scrollTo(nights.first?.id, anchor: .top)
                     }
                 }
             }
@@ -228,6 +229,7 @@ struct RecoveryView: View {
     @State private var lastLoadedDate: Date = Date()
     @State private var loadedDates: Set<String> = []
     @State private var isAuthorized = false
+    @State private var isLoadingMore = false
     
     private let initialLoadCount = 10
     private let batchLoadCount = 7
@@ -244,9 +246,6 @@ struct RecoveryView: View {
                     VStack {
                         Text("No data available")
                             .foregroundColor(.secondary)
-                    }
-                    .onAppear {
-                        print("[UI] Showing empty state")
                     }
                 } else {
                     MainScrollView(
