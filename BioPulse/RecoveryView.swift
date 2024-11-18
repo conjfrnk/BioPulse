@@ -21,6 +21,7 @@ struct NightData: Identifiable {
 
 struct NightCardView: View {
     let nightData: NightData
+    @Environment(\.colorScheme) var colorScheme
     
     init(nightData: NightData) {
         self.nightData = nightData
@@ -47,7 +48,7 @@ struct NightCardView: View {
                 Spacer()
                 ZStack {
                     Circle()
-                        .stroke(Color.gray.opacity(0.2), lineWidth: 3)
+                        .stroke(Color.gray.opacity(0.3), lineWidth: 3)
                         .frame(width: 40, height: 40)
                     
                     Circle()
@@ -120,9 +121,18 @@ struct NightCardView: View {
             }
         }
         .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(16)
-        .shadow(radius: 5)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(colorScheme == .dark ? Color(.systemGray6) : Color(.systemBackground))
+                .shadow(color: colorScheme == .dark ? Color.black.opacity(0.3) : Color.gray.opacity(0.2), radius: 5)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(
+                    colorScheme == .dark ? Color.gray.opacity(0.3) : Color.clear,
+                    lineWidth: 1
+                )
+        )
     }
     
     private func formatDuration(_ duration: TimeInterval) -> String {
@@ -238,7 +248,6 @@ struct RecoveryView: View {
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter
     }()
-    
     var body: some View {
         NavigationView {
             ZStack(alignment: .bottomTrailing) {
