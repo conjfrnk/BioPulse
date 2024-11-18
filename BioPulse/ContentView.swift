@@ -8,40 +8,41 @@
 import SwiftUI
 
 struct ContentView: View {
+    @State private var selectedTab = 2  // Set Energy tab as default
     @State private var healthDataManager = HealthDataManager()
     @State private var authorizationStatus = "Not Requested"
     
     var body: some View {
-        TabView {
+        TabView(selection: $selectedTab) {
             DataView()
                 .tabItem {
-                    Image(systemName: "list.bullet.rectangle.fill")
-                    Text("Data")
+                    Label("Data", systemImage: "list.bullet.rectangle.fill")
                 }
+                .tag(0)
             
             TrendView()
                 .tabItem {
-                    Image(systemName: "chart.bar")
-                    Text("Trends")
+                    Label("Trends", systemImage: "chart.bar")
                 }
+                .tag(1)
             
             EnergyView()
                 .tabItem {
-                    Image(systemName: "bolt.heart.fill")
-                    Text("Energy")
+                    Label("Energy", systemImage: "bolt.heart.fill")
                 }
+                .tag(2)
             
             RecoveryView()
                 .tabItem {
-                    Image(systemName: "bed.double")
-                    Text("Recovery")
+                    Label("Recovery", systemImage: "bed.double")
                 }
+                .tag(3)
             
             InsightsView()
                 .tabItem {
-                    Image(systemName: "chart.line.text.clipboard.fill")
-                    Text("Insights")
+                    Label("Insights", systemImage: "chart.line.text.clipboard.fill")
                 }
+                .tag(4)
         }
         .onAppear {
             requestHealthAuthorization()
