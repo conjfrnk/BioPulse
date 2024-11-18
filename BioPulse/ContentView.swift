@@ -15,11 +15,11 @@ struct ContentView: View {
     
     // Define the colors for each tab
     private let tabColors: [UIColor] = [
-        .purple, // Data
-        .green,  // Trends
-        .red,    // Energy
-        .blue,   // Recovery
-        .orange  // Insights
+        UIColor(red: 0.5, green: 0.4, blue: 1.0, alpha: 1.0),  // Data
+        UIColor(Color.green),  // Trends
+        UIColor(Color.red),    // Energy
+        UIColor(Color.blue),   // Recovery
+        UIColor(Color.orange)  // Insights
     ]
     
     var body: some View {
