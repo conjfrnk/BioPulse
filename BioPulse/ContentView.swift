@@ -11,6 +11,16 @@ struct ContentView: View {
     @State private var selectedTab = 2  // Set Energy tab as default
     @State private var healthDataManager = HealthDataManager()
     @State private var authorizationStatus = "Not Requested"
+    @State private var tabViewID = UUID() // Unique identifier for TabView refresh
+    
+    // Define the colors for each tab
+    private let tabColors: [UIColor] = [
+        .purple, // Data
+        .green,  // Trends
+        .red,    // Energy
+        .blue,   // Recovery
+        .orange  // Insights
+    ]
     
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -44,8 +54,14 @@ struct ContentView: View {
                 }
                 .tag(4)
         }
+        .id(tabViewID) // Force TabView refresh
         .onAppear {
+            updateTabBarAppearance(for: selectedTab)
             requestHealthAuthorization()
+        }
+        .onChange(of: selectedTab) { oldValue, newValue in
+            updateTabBarAppearance(for: newValue)
+            tabViewID = UUID() // Trigger TabView re-render
         }
     }
     
@@ -58,6 +74,14 @@ struct ContentView: View {
                 }
             }
         }
+    }
+    
+    private func updateTabBarAppearance(for selectedIndex: Int) {
+        let appearance = UITabBarAppearance()
+        appearance.stackedLayoutAppearance.selected.iconColor = tabColors[selectedIndex]
+        appearance.stackedLayoutAppearance.selected.titleTextAttributes = [.foregroundColor: tabColors[selectedIndex]]
+        UITabBar.appearance().standardAppearance = appearance
+        UITabBar.appearance().scrollEdgeAppearance = appearance
     }
 }
 
