@@ -166,24 +166,60 @@ struct SleepTrendView: View {
                             )
                             .foregroundStyle(.blue)
                             .symbolSize(50)
+                        }
+                        
+                        // Add connecting line for bedtimes
+                        ForEach(Array(zip(trendData.dropLast(), trendData.dropFirst())), id: \.0.id) { point1, point2 in
+                            LineMark(
+                                x: .value("Date", point1.date),
+                                y: .value("Time", minutesSinceMidnight(from: point1.bedtime)),
+                                series: .value("Series", "Bedtime")
+                            )
+                            LineMark(
+                                x: .value("Date", point2.date),
+                                y: .value("Time", minutesSinceMidnight(from: point2.bedtime)),
+                                series: .value("Series", "Bedtime")
+                            )
+                            .foregroundStyle(.blue)
+                        }
+                        
+                        // Add connecting line for wake times
+                        ForEach(Array(zip(trendData.dropLast(), trendData.dropFirst())), id: \.0.id) { point1, point2 in
+                            LineMark(
+                                x: .value("Date", point1.date),
+                                y: .value("Time", minutesSinceMidnight(from: point1.wakeTime)),
+                                series: .value("Series", "Wake time")
+                            )
+                            LineMark(
+                                x: .value("Date", point2.date),
+                                y: .value("Time", minutesSinceMidnight(from: point2.wakeTime)),
+                                series: .value("Series", "Wake time")
+                            )
+                            .foregroundStyle(.blue)
+                        }
+                        
+                        // Goal bedtime horizontal line
+                        if let firstPoint = trendData.first, let lastPoint = trendData.last {
+                            let (firstGoalBed, _) = goalTimes(for: firstPoint.date)
+                            let goalBedMinutes = minutesSinceMidnight(from: firstGoalBed)
                             
-                            // Goal bedtime point
-                            PointMark(
-                                x: .value("Date", point.date),
-                                y: .value("Time", goalBedMinutes)
+                            RuleMark(
+                                y: .value("Goal Bedtime", goalBedMinutes)
                             )
                             .foregroundStyle(.green.opacity(0.5))
-                            .symbolSize(50)
-                            .symbol(.circle)
+                            .lineStyle(StrokeStyle(lineWidth: 2, dash: [5, 5]))
+                        }
+                        
+                        // Goal wake time horizontal line
+                        if let firstPoint = trendData.first, let lastPoint = trendData.last {
+                            let (_, firstGoalWake) = goalTimes(for: firstPoint.date)
+                            let goalWakeMinutes = minutesSinceMidnight(from: firstGoalWake)
                             
-                            // Goal wake time point
-                            PointMark(
-                                x: .value("Date", point.date),
-                                y: .value("Time", goalWakeMinutes)
+                            RuleMark(
+                                y: .value("Goal Wake Time", goalWakeMinutes)
                             )
                             .foregroundStyle(.green.opacity(0.5))
-                            .symbolSize(50)
-                            .symbol(.circle)
+                            .lineStyle(StrokeStyle(lineWidth: 2, dash: [5, 5]))
                         }
                     }
                     .chartYAxis {
@@ -232,9 +268,14 @@ struct SleepTrendView: View {
                         }
                         
                         HStack {
-                            Circle()
+                            Rectangle()
                                 .fill(.green.opacity(0.5))
-                                .frame(width: 8, height: 8)
+                                .frame(width: 20, height: 2)
+                                .overlay(
+                                    Rectangle()
+                                        .stroke(style: StrokeStyle(dash: [5, 5]))
+                                        .foregroundColor(.green.opacity(0.5))
+                                )
                             Text("Goal Times")
                                 .font(.caption)
                         }
