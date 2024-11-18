@@ -138,9 +138,6 @@ struct SleepTrendView: View {
                         ForEach(trendData) { point in
                             let bedtimeMinutes = minutesSinceMidnight(from: point.bedtime)
                             let wakeTimeMinutes = minutesSinceMidnight(from: point.wakeTime)
-                            let (goalBedtime, goalWake) = goalTimes(for: point.date)
-                            let goalBedMinutes = minutesSinceMidnight(from: goalBedtime)
-                            let goalWakeMinutes = minutesSinceMidnight(from: goalWake)
                             
                             // Sleep duration bar
                             RectangleMark(
@@ -199,7 +196,7 @@ struct SleepTrendView: View {
                         }
                         
                         // Goal bedtime horizontal line
-                        if let firstPoint = trendData.first, let lastPoint = trendData.last {
+                        if let firstPoint = trendData.first {
                             let (firstGoalBed, _) = goalTimes(for: firstPoint.date)
                             let goalBedMinutes = minutesSinceMidnight(from: firstGoalBed)
                             
@@ -211,7 +208,7 @@ struct SleepTrendView: View {
                         }
                         
                         // Goal wake time horizontal line
-                        if let firstPoint = trendData.first, let lastPoint = trendData.last {
+                        if let firstPoint = trendData.first {
                             let (_, firstGoalWake) = goalTimes(for: firstPoint.date)
                             let goalWakeMinutes = minutesSinceMidnight(from: firstGoalWake)
                             
