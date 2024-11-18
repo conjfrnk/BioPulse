@@ -81,29 +81,38 @@ struct SleepTrendView: View {
         .prefix(14)
         .reversed()
     }
+    
     private let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"
         return formatter
     }()
     
-    // Find y-axis bounds based on data
+    // Y-axis bounds calculation
     private var yAxisBounds: ClosedRange<Int> {
-        // Get all relevant times
-        var allMinutes: [Int] = []
+        var bedtimeMinutes: [Int] = []
+        var wakeTimeMinutes: [Int] = []
+        
+        // Collect all actual and goal times
         for point in trendData {
-            allMinutes.append(minutesSinceMidnight(from: point.bedtime))
-            allMinutes.append(minutesSinceMidnight(from: point.wakeTime))
-            let goals = goalTimes(for: point.date)
-            allMinutes.append(minutesSinceMidnight(from: goals.bedtime))
-            allMinutes.append(minutesSinceMidnight(from: goals.wakeTime))
+            // Add actual times
+            bedtimeMinutes.append(minutesSinceMidnight(from: point.bedtime))
+            wakeTimeMinutes.append(minutesSinceMidnight(from: point.wakeTime))
+            
+            // Add goal times for this date
+            let (goalBedtime, goalWake) = goalTimes(for: point.date)
+            bedtimeMinutes.append(minutesSinceMidnight(from: goalBedtime))
+            wakeTimeMinutes.append(minutesSinceMidnight(from: goalWake))
         }
         
-        // Round to nearest hour for padding
-        let minMinutes = (allMinutes.min() ?? 0) / 60 * 60 - 60 // Round down and subtract an hour
-        let maxMinutes = ((allMinutes.max() ?? (24 * 60)) + 59) / 60 * 60 + 60 // Round up and add an hour
+        // Find earliest bedtime and latest wake time
+        guard let earliestBedtime = bedtimeMinutes.min(),
+              let latestWake = wakeTimeMinutes.max() else {
+            return 0...1440 // Default to full day if no data
+        }
         
-        return minMinutes...maxMinutes
+        // Set bounds to an hour before/after the earliest/latest times
+        return (earliestBedtime - 60)...(latestWake + 60)
     }
     
     private let dateFormatter: DateFormatter = {
@@ -111,14 +120,6 @@ struct SleepTrendView: View {
         formatter.dateFormat = "E" // Just the day name abbreviation
         return formatter
     }()
-    
-    private var displayedDates: [Date] {
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: Date())
-        return (0..<7).map { dayOffset in
-            calendar.date(byAdding: .day, value: -dayOffset, to: today)!
-        }.reversed()
-    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -137,9 +138,9 @@ struct SleepTrendView: View {
                         ForEach(trendData) { point in
                             let bedtimeMinutes = minutesSinceMidnight(from: point.bedtime)
                             let wakeTimeMinutes = minutesSinceMidnight(from: point.wakeTime)
-                            let goals = goalTimes(for: point.date)
-                            let goalBedMinutes = minutesSinceMidnight(from: goals.bedtime)
-                            let goalWakeMinutes = minutesSinceMidnight(from: goals.wakeTime)
+                            let (goalBedtime, goalWake) = goalTimes(for: point.date)
+                            let goalBedMinutes = minutesSinceMidnight(from: goalBedtime)
+                            let goalWakeMinutes = minutesSinceMidnight(from: goalWake)
                             
                             // Sleep duration bar
                             RectangleMark(
@@ -185,18 +186,6 @@ struct SleepTrendView: View {
                             .symbol(.circle)
                         }
                     }
-                    .chartXAxis {
-                        AxisMarks(values: .stride(by: .day)) { value in
-                            if let date = value.as(Date.self) {
-                                AxisValueLabel {
-                                    Text(dateFormatter.string(from: date))
-                                        .rotationEffect(.degrees(-45))
-                                }
-                                AxisTick()
-                                AxisGridLine()
-                            }
-                        }
-                    }
                     .chartYAxis {
                         AxisMarks(values: .stride(by: 120)) { value in // 120 minutes = 2 hours
                             if let minutes = value.as(Int.self) {
@@ -210,6 +199,19 @@ struct SleepTrendView: View {
                                 
                                 AxisValueLabel {
                                     Text(timeFormatter.string(from: date))
+                                }
+                                AxisTick()
+                                AxisGridLine()
+                            }
+                        }
+                    }
+                    .chartYScale(domain: yAxisBounds)
+                    .chartXAxis {
+                        AxisMarks(values: .stride(by: .day)) { value in
+                            if let date = value.as(Date.self) {
+                                AxisValueLabel {
+                                    Text(dateFormatter.string(from: date))
+                                        .rotationEffect(.degrees(-45))
                                 }
                                 AxisTick()
                                 AxisGridLine()
