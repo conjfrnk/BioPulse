@@ -15,7 +15,7 @@ struct SettingsView: View {
     @State private var wakeScrollOffset: CGFloat = 0
     @State private var lastSleepDragValue: CGFloat = 0
     @State private var lastWakeDragValue: CGFloat = 0
-
+    
     private let sleepGoals = Array(stride(from: 5 * 60, through: 12 * 60, by: 15))
     private let wakeTimeOptions: [Date] = {
         var times: [Date] = []
@@ -32,19 +32,19 @@ struct SettingsView: View {
     private let itemWidth: CGFloat = 80
     private let itemSpacing: CGFloat = 20
     private var totalItemWidth: CGFloat { itemWidth + itemSpacing }
-
+    
     var body: some View {
         NavigationView {
             VStack(spacing: 40) {
                 Text("Settings")
                     .font(.largeTitle)
                     .padding()
-
+                
                 // Sleep Goal Section
                 VStack(spacing: 16) {
                     Text("Sleep Goal: \(formattedSleepGoal(minutes: selectedSleepGoal))")
                         .font(.headline)
-
+                    
                     GeometryReader { geometry in
                         let center = geometry.size.width / 2
                         ZStack {
@@ -52,7 +52,7 @@ struct SettingsView: View {
                                 .stroke(Color.blue, lineWidth: 2)
                                 .frame(width: itemWidth, height: 50)
                                 .position(x: center, y: 50)
-
+                            
                             HStack(spacing: itemSpacing) {
                                 ForEach(sleepGoals.indices, id: \.self) { index in
                                     let goal = sleepGoals[index]
@@ -82,12 +82,12 @@ struct SettingsView: View {
                     }
                     .frame(height: 100)
                 }
-
+                
                 // Wake Time Section
                 VStack(spacing: 16) {
                     Text("Goal Wake Time: \(formattedTime(selectedWakeTime))")
                         .font(.headline)
-
+                    
                     GeometryReader { geometry in
                         let center = geometry.size.width / 2
                         ZStack {
@@ -95,7 +95,7 @@ struct SettingsView: View {
                                 .stroke(Color.blue, lineWidth: 2)
                                 .frame(width: itemWidth, height: 50)
                                 .position(x: center, y: 50)
-
+                            
                             HStack(spacing: itemSpacing) {
                                 ForEach(wakeTimeOptions.indices, id: \.self) { index in
                                     let time = wakeTimeOptions[index]
@@ -125,7 +125,7 @@ struct SettingsView: View {
                     }
                     .frame(height: 100)
                 }
-
+                
                 Spacer()
             }
             .toolbar {
@@ -197,7 +197,7 @@ struct SettingsView: View {
                 }
             }
     }
-
+    
     private func initializeSettings() {
         // Initialize sleep goal
         let storedSleepGoal = UserDefaults.standard.integer(forKey: "sleepGoal")
@@ -243,7 +243,7 @@ struct SettingsView: View {
             return optionMinutes >= minutes
         }
     }
-
+    
     private func formattedSleepGoal(minutes: Int) -> String {
         let hours = minutes / 60
         let remainingMinutes = minutes % 60
@@ -255,27 +255,27 @@ struct SettingsView: View {
         formatter.dateFormat = "h:mm a"
         return formatter.string(from: date)
     }
-
+    
     private func scaleEffectForItem(at index: Int, offset: CGFloat, centerX: CGFloat) -> CGFloat {
         let itemPosition = CGFloat(index) * totalItemWidth + offset + ((UIScreen.main.bounds.width - itemWidth) / 2) + (itemWidth / 2)
         let distance = abs(itemPosition - centerX)
         let maxDistance = UIScreen.main.bounds.width / 2
         return max(0.7, 1 - (distance / maxDistance) * 0.3)
     }
-
+    
     private func rotationAngleForItem(at index: Int, offset: CGFloat, centerX: CGFloat) -> Angle {
         let itemPosition = CGFloat(index) * totalItemWidth + offset + ((UIScreen.main.bounds.width - itemWidth) / 2) + (itemWidth / 2)
         let angle = Double((itemPosition - centerX) / UIScreen.main.bounds.width) * 30
         return Angle(degrees: angle)
     }
-
+    
     private func opacityForItem(at index: Int, offset: CGFloat, centerX: CGFloat) -> Double {
         let itemPosition = CGFloat(index) * totalItemWidth + offset + ((UIScreen.main.bounds.width - itemWidth) / 2) + (itemWidth / 2)
         let distance = abs(itemPosition - centerX)
         let maxDistance = UIScreen.main.bounds.width / 2
         return Double(max(0.5, 1 - (distance / maxDistance)))
     }
-
+    
     private func selectSleepGoal(at index: Int) {
         withTransaction(Transaction(animation: .none)) {
             selectedSleepGoal = sleepGoals[index]

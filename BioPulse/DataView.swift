@@ -75,7 +75,6 @@ struct DataView: View {
                         }
                         
                         Divider()
-                            .padding(.vertical, 8)
                         
                         // Sleep Stages Chart View
                         VStack(alignment: .leading) {

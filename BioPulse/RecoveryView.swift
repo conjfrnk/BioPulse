@@ -526,10 +526,10 @@ struct RecoveryView: View {
         
         // 4. Score HRV (if available)
         if let hrv = hrv {
-            if hrv < 20 {
+            if hrv < 100 {
                 score -= 10
                 print("[SCORE] Deducting 10 points for very low HRV (\(Int(hrv)) ms)")
-            } else if hrv < 30 {
+            } else if hrv < 120 {
                 score -= 5
                 print("[SCORE] Deducting 5 points for low HRV (\(Int(hrv)) ms)")
             }
@@ -540,10 +540,10 @@ struct RecoveryView: View {
         
         // 5. Score RHR (if available)
         if let rhr = rhr {
-            if rhr > 80 {
+            if rhr > 70 {
                 score -= 10
                 print("[SCORE] Deducting 10 points for high RHR (\(Int(rhr)) bpm)")
-            } else if rhr > 70 {
+            } else if rhr > 60 {
                 score -= 5
                 print("[SCORE] Deducting 5 points for elevated RHR (\(Int(rhr)) bpm)")
             }

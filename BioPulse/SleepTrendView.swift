@@ -25,16 +25,16 @@ struct SleepTrendView: View {
         // Set wake time for the given date
         let wakeComponents = calendar.dateComponents([.hour, .minute], from: goalWakeTime)
         let wakeTime = calendar.date(bySettingHour: wakeComponents.hour ?? 7,
-                                   minute: wakeComponents.minute ?? 0,
-                                   second: 0,
-                                   of: date)!
+                                     minute: wakeComponents.minute ?? 0,
+                                     second: 0,
+                                     of: date)!
         
         // Calculate bedtime by going backwards from wake time
         let bedtime = calendar.date(byAdding: .minute, value: -goalSleepMinutes, to: wakeTime)!
         
         return (bedtime, wakeTime)
     }
-
+    
     private func minutesSinceMidnight(from date: Date) -> Int {
         let calendar = Calendar.current
         let components = calendar.dateComponents([.hour, .minute], from: date)
@@ -81,18 +81,44 @@ struct SleepTrendView: View {
         .prefix(14)
         .reversed()
     }
-    
     private let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"
         return formatter
     }()
     
+    // Find y-axis bounds based on data
+    private var yAxisBounds: ClosedRange<Int> {
+        // Get all relevant times
+        var allMinutes: [Int] = []
+        for point in trendData {
+            allMinutes.append(minutesSinceMidnight(from: point.bedtime))
+            allMinutes.append(minutesSinceMidnight(from: point.wakeTime))
+            let goals = goalTimes(for: point.date)
+            allMinutes.append(minutesSinceMidnight(from: goals.bedtime))
+            allMinutes.append(minutesSinceMidnight(from: goals.wakeTime))
+        }
+        
+        // Round to nearest hour for padding
+        let minMinutes = (allMinutes.min() ?? 0) / 60 * 60 - 60 // Round down and subtract an hour
+        let maxMinutes = ((allMinutes.max() ?? (24 * 60)) + 59) / 60 * 60 + 60 // Round up and add an hour
+        
+        return minMinutes...maxMinutes
+    }
+    
     private let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.dateFormat = "E M/d"
+        formatter.dateFormat = "E" // Just the day name abbreviation
         return formatter
     }()
+    
+    private var displayedDates: [Date] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        return (0..<7).map { dayOffset in
+            calendar.date(byAdding: .day, value: -dayOffset, to: today)!
+        }.reversed()
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
