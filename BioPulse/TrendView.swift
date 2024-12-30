@@ -5,7 +5,70 @@
 //  Created by Connor Frank on 11/13/24.
 //
 
+import Charts
 import SwiftUI
+
+struct HRVTrendChart: View {
+    let dailyHRV: [Date: Double]
+    let baseline: Double
+
+    var body: some View {
+        VStack(alignment: .leading) {
+            Text("HRV (Last 30 Days)")
+                .font(.headline)
+            Chart {
+                ForEach(dailyHRV.keys.sorted(), id: \.self) { day in
+                    LineMark(
+                        x: .value("Date", day),
+                        y: .value("HRV", dailyHRV[day] ?? 0)
+                    )
+                }
+                RuleMark(y: .value("Baseline", baseline))
+                    .lineStyle(StrokeStyle(lineWidth: 2, dash: [5]))
+                    .foregroundStyle(.gray)
+            }
+            .chartXAxis {
+                AxisMarks(values: .stride(by: .day)) { value in
+                    if let date = value.as(Date.self) {
+                        AxisValueLabel(
+                            format: .dateTime.month(.abbreviated).day())
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct RHRTrendChart: View {
+    let dailyRHR: [Date: Double]
+    let baseline: Double
+
+    var body: some View {
+        VStack(alignment: .leading) {
+            Text("Resting HR (Last 30 Days)")
+                .font(.headline)
+            Chart {
+                ForEach(dailyRHR.keys.sorted(), id: \.self) { day in
+                    LineMark(
+                        x: .value("Date", day),
+                        y: .value("RHR", dailyRHR[day] ?? 0)
+                    )
+                }
+                RuleMark(y: .value("Baseline", baseline))
+                    .lineStyle(StrokeStyle(lineWidth: 2, dash: [5]))
+                    .foregroundStyle(.gray)
+            }
+            .chartXAxis {
+                AxisMarks(values: .stride(by: .day)) { value in
+                    if let date = value.as(Date.self) {
+                        AxisValueLabel(
+                            format: .dateTime.month(.abbreviated).day())
+                    }
+                }
+            }
+        }
+    }
+}
 
 struct TrendView: View {
     @StateObject private var healthDataManager = HealthDataManager()
@@ -15,30 +78,30 @@ struct TrendView: View {
         [(stage: String, startDate: Date, endDate: Date)]?
     @State private var isLoadingSleep = false
     @Environment(\.scenePhase) private var scenePhase
-
-    // Get goal wake time from UserDefaults
     private var goalWakeTime: Date {
         let defaultWakeTime =
             Calendar.current.date(
                 bySettingHour: 7, minute: 0, second: 0, of: Date()) ?? Date()
         let timeInterval = UserDefaults.standard.double(forKey: "goalWakeTime")
-        // If not set, fall back to 7:00 AM
         return timeInterval == 0
             ? defaultWakeTime : Date(timeIntervalSince1970: timeInterval)
     }
-
-    // Get goal sleep duration from UserDefaults
     private var goalSleepMinutes: Int {
         UserDefaults.standard.integer(forKey: "sleepGoal")
     }
-
-    // Helper to check if goals are not set
     private var isGoalNotSet: Bool {
         let storedSleepGoal = UserDefaults.standard.integer(forKey: "sleepGoal")
         let storedWakeTime = UserDefaults.standard.double(
             forKey: "goalWakeTime")
         return storedSleepGoal == 0 || storedWakeTime == 0
     }
+
+    @State private var dailyHRV: [Date: Double] = [:]
+    @State private var hrvBaseline: Double = 0
+    @State private var isLoadingHRV = false
+    @State private var dailyRHR: [Date: Double] = [:]
+    @State private var rhrBaseline: Double = 0
+    @State private var isLoadingRHR = false
 
     var body: some View {
         NavigationView {
@@ -58,8 +121,24 @@ struct TrendView: View {
                             .frame(maxWidth: .infinity, alignment: .center)
                             .padding()
                     }
-
-                    // Add more trend views here as needed
+                    if isLoadingHRV {
+                        ProgressView()
+                            .frame(height: 200)
+                    } else if dailyHRV.isEmpty {
+                        Text("No HRV data available (last 30 days)")
+                    } else {
+                        HRVTrendChart(dailyHRV: dailyHRV, baseline: hrvBaseline)
+                            .frame(height: 200)
+                    }
+                    if isLoadingRHR {
+                        ProgressView()
+                            .frame(height: 200)
+                    } else if dailyRHR.isEmpty {
+                        Text("No RHR data available (last 30 days)")
+                    } else {
+                        RHRTrendChart(dailyRHR: dailyRHR, baseline: rhrBaseline)
+                            .frame(height: 200)
+                    }
                 }
                 .padding()
             }
@@ -87,40 +166,34 @@ struct TrendView: View {
                 InfoView()
             }
             .onAppear {
-                print("[TRENDS] View appeared")
-
-                // If user has not set goals, force show Settings
                 if isGoalNotSet {
                     showingSettings = true
                 } else {
                     loadSleepData()
+                    loadBaselines()
                 }
             }
             .onChange(of: scenePhase) { oldPhase, newPhase in
                 if newPhase == .active {
-                    print("[TRENDS] Scene became active")
-                    // If goals are unset, present settings; else load data
                     if isGoalNotSet {
                         showingSettings = true
                     } else {
                         loadSleepData()
+                        loadBaselines()
                     }
                 }
             }
             .onChange(of: showingSettings) { wasShowing, isShowing in
                 if !isShowing && wasShowing {
-                    print("[TRENDS] Settings sheet dismissed")
-                    // If the user dismissed settings but still hasn't set their goals
-                    // we could show it again or wait. For now, let's just re-check:
                     if isGoalNotSet {
                         showingSettings = true
                     } else {
                         loadSleepData()
+                        loadBaselines()
                     }
                 }
             }
             .refreshable {
-                print("[TRENDS] Manual refresh triggered")
                 await refreshData()
             }
         }
@@ -128,23 +201,17 @@ struct TrendView: View {
 
     private func loadSleepData() {
         guard !isLoadingSleep else {
-            print("[TRENDS] Already loading sleep data")
             return
         }
-
-        print("[TRENDS] Loading sleep data")
         isLoadingSleep = true
-        sleepData = nil  // Clear existing data
-
-        // Load the last 7 days of sleep data
+        sleepData = nil
         let calendar = Calendar.current
         let endDate = Date()
         let startDate = calendar.date(byAdding: .day, value: -7, to: endDate)!
-
         loadSleepDataForRange(startDate: startDate, endDate: endDate) { data in
             DispatchQueue.main.async {
-                sleepData = data
-                isLoadingSleep = false
+                self.sleepData = data
+                self.isLoadingSleep = false
             }
         }
     }
@@ -159,7 +226,6 @@ struct TrendView: View {
         let group = DispatchGroup()
         let calendar = Calendar.current
         var currentDate = startDate
-
         while currentDate <= endDate {
             group.enter()
             healthDataManager.fetchSleepData(for: currentDate) { data, error in
@@ -171,7 +237,6 @@ struct TrendView: View {
             currentDate = calendar.date(
                 byAdding: .day, value: 1, to: currentDate)!
         }
-
         group.notify(queue: .main) {
             completion(allData)
         }
@@ -180,5 +245,37 @@ struct TrendView: View {
     @MainActor
     private func refreshData() async {
         loadSleepData()
+        loadBaselines()
+    }
+
+    private func loadBaselines() {
+        isLoadingHRV = true
+        healthDataManager.fetchDailyHRVOverLast30Days { data, error in
+            DispatchQueue.main.async {
+                self.isLoadingHRV = false
+                if let data = data {
+                    self.dailyHRV = data
+                    if !data.isEmpty {
+                        let values = data.values
+                        self.hrvBaseline =
+                            values.reduce(0, +) / Double(values.count)
+                    }
+                }
+            }
+        }
+        isLoadingRHR = true
+        healthDataManager.fetchDailyRestingHROverLast30Days { data, error in
+            DispatchQueue.main.async {
+                self.isLoadingRHR = false
+                if let data = data {
+                    self.dailyRHR = data
+                    if !data.isEmpty {
+                        let values = data.values
+                        self.rhrBaseline =
+                            values.reduce(0, +) / Double(values.count)
+                    }
+                }
+            }
+        }
     }
 }
