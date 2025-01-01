@@ -5,17 +5,15 @@
 //  Created by Connor Frank on 11/13/24.
 //
 
-import SwiftUI
 import Charts
+import SwiftUI
 
 struct TrendView: View {
     @StateObject private var healthDataManager = HealthDataManager()
     @State private var nights: [HealthDataManager.NightData] = []
-
     @State private var dailyHRV: [Date: Double] = [:]
     @State private var dailyRHR: [Date: Double] = [:]
     @State private var isLoading = false
-
     @State private var showingSettings = false
     @State private var showingInfo = false
 
@@ -42,22 +40,25 @@ struct TrendView: View {
                             .frame(maxWidth: .infinity, alignment: .center)
                             .padding()
                     } else {
-                        // Sleep chart
+                        // Sleep trend
                         SleepTrendView(
                             sleepData: convertToStages(nights),
                             goalSleepMinutes: goalSleepMinutes,
                             goalWakeTime: fetchGoalWakeTime()
                         )
 
-                        if dailyHRV.isEmpty {
+                        // HRV trend
+                        if dailyHRV.filter({ $0.value != 0 }).isEmpty {
                             Text("No HRV data (Last 30 days)")
                                 .foregroundColor(.secondary)
                         } else {
                             HRVTrendChart(dailyHRV: dailyHRV)
                                 .frame(height: 200)
+                                .padding(.bottom, 20)  // extra padding
                         }
 
-                        if dailyRHR.isEmpty {
+                        // RHR trend
+                        if dailyRHR.filter({ $0.value != 0 }).isEmpty {
                             Text("No RHR data (Last 30 days)")
                                 .foregroundColor(.secondary)
                         } else {
@@ -85,7 +86,6 @@ struct TrendView: View {
                     }
                 }
             }
-            // .sheet(...) your Settings/Info if needed
             .onAppear {
                 if isGoalNotSet {
                     showingSettings = true
@@ -105,6 +105,12 @@ struct TrendView: View {
             .refreshable {
                 await refreshTrend()
             }
+            .sheet(isPresented: $showingSettings) {
+                SettingsView()
+            }
+            .sheet(isPresented: $showingInfo) {
+                InfoView()
+            }
         }
     }
 
@@ -115,16 +121,17 @@ struct TrendView: View {
         dailyHRV = [:]
         dailyRHR = [:]
 
-        // fetch 30 days
-        healthDataManager.fetchNightsOverLastNDays(30, sleepGoalMinutes: goalSleepMinutes) { fetched in
+        healthDataManager.fetchNightsOverLastNDays(
+            30, sleepGoalMinutes: goalSleepMinutes
+        ) { fetched in
             let cal = Calendar.current
             for n in fetched {
                 let dayKey = cal.startOfDay(for: n.date)
-                self.dailyHRV[dayKey] = n.hrv
-                self.dailyRHR[dayKey] = n.restingHeartRate
+                dailyHRV[dayKey] = n.hrv
+                dailyRHR[dayKey] = n.restingHeartRate
             }
-            self.nights = fetched
-            self.isLoading = false
+            nights = fetched
+            isLoading = false
         }
     }
 
@@ -133,19 +140,25 @@ struct TrendView: View {
         loadTrendData()
     }
 
-    private func convertToStages(_ arr: [HealthDataManager.NightData]) -> [(stage: String, startDate: Date, endDate: Date)] {
-        // If you only have total time, treat it as "Core" for the chart
+    private func convertToStages(_ arr: [HealthDataManager.NightData]) -> [(
+        stage: String, startDate: Date, endDate: Date
+    )] {
+        // For illustration, we treat the entire night as "Core"
         let sorted = arr.sorted { $0.date > $1.date }
         let mapped = sorted.map {
-            (stage: "Core", startDate: $0.sleepStartTime, endDate: $0.sleepEndTime)
+            (
+                stage: "Core", startDate: $0.sleepStartTime,
+                endDate: $0.sleepEndTime
+            )
         }
-        // show last 8
+        // Only show up to 8 nights
         return Array(mapped.prefix(8).reversed())
     }
 
     private func fetchGoalWakeTime() -> Date {
         let c = Calendar.current
-        let defaultWake = c.date(bySettingHour: 7, minute: 0, second: 0, of: Date()) ?? Date()
+        let defaultWake =
+            c.date(bySettingHour: 7, minute: 0, second: 0, of: Date()) ?? Date()
         let stored = UserDefaults.standard.double(forKey: "goalWakeTime")
         return stored == 0 ? defaultWake : Date(timeIntervalSince1970: stored)
     }
