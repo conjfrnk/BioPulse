@@ -40,16 +40,12 @@ struct TrendView: View {
                             .frame(maxWidth: .infinity, alignment: .center)
                             .padding()
                     } else {
-                        Text(
-                            "Average Awake Time: \(durationStr(averageAwakeTime))"
-                        )
-                        .font(.headline)
-                        .padding(.horizontal)
-
+                        // Removed the "Average Awake Time" text from here
                         SleepTrendView(
                             sleepData: convertToStages(nights),
                             goalSleepMinutes: goalSleepMinutes,
-                            goalWakeTime: fetchGoalWakeTime()
+                            goalWakeTime: fetchGoalWakeTime(),
+                            sleepNights: nights  // passing entire array
                         )
                         if dailyHRV.filter({ $0.value != 0 }).isEmpty {
                             Text("No HRV data (Last 30 days)")
@@ -155,18 +151,6 @@ struct TrendView: View {
             )
         }
         return Array(mapped.prefix(8).reversed())
-    }
-
-    private var averageAwakeTime: TimeInterval {
-        guard !nights.isEmpty else { return 0 }
-        let totalAwake = nights.reduce(0) { $0 + $1.totalAwakeTime }
-        return totalAwake / Double(nights.count)
-    }
-
-    private func durationStr(_ t: TimeInterval) -> String {
-        let h = Int(t) / 3600
-        let m = (Int(t) % 3600) / 60
-        return String(format: "%dh %02dm", h, m)
     }
 
     private func fetchGoalWakeTime() -> Date {

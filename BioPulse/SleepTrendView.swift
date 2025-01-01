@@ -20,6 +20,8 @@ struct SleepTrendView: View {
     let goalSleepMinutes: Int
     let goalWakeTime: Date
 
+    let sleepNights: [HealthDataManager.NightData]
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Sleep (Last 8 nights)")
@@ -35,6 +37,12 @@ struct SleepTrendView: View {
                 chartContent
             }
         }
+    }
+
+    private var df: DateFormatter {
+        let f = DateFormatter()
+        f.dateFormat = "E"
+        return f
     }
 
     private var chartContent: some View {
@@ -203,9 +211,12 @@ struct SleepTrendView: View {
     private var recommendedBedtimeInfo: some View {
         let (recoBed, recoWake) = goalTimes(for: Date())
         return VStack(alignment: .leading, spacing: 8) {
-            Text("Average Awake Time: \(durationStr(averageAwakeTime))")
-                .font(.footnote)
-                .foregroundColor(.secondary)
+            // Replacing old stage-based awake calculation with the real one from the NightData array
+            Text(
+                "Average Awake Time: \(durationStr(averageAwakeTimeFromNights))"
+            )
+            .font(.footnote)
+            .foregroundColor(.secondary)
             Text("Recommended Bedtime (Tonight): \(timeString(recoBed))")
                 .font(.footnote)
                 .foregroundColor(.secondary)
@@ -217,27 +228,17 @@ struct SleepTrendView: View {
         .padding(.bottom, 8)
     }
 
-    private var df: DateFormatter {
-        let f = DateFormatter()
-        f.dateFormat = "E"
-        return f
-    }
+    // This was the old internal stage-based awake logic. We no longer need it, so we won't use it.
+    // We rely on the actual NightData's totalAwakeTime.
 
-    private var averageAwakeTime: TimeInterval {
-        let g = groupSleepDataByNight()
-        if g.isEmpty { return 0 }
-        var arr: [TimeInterval] = []
-        for (_, recs) in g {
-            let awakeTime = recs.filter { $0.stage == "Awake" }
-                .reduce(0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }
-            arr.append(awakeTime)
-        }
-        let tot = arr.reduce(0, +)
-        return tot / Double(arr.count)
+    private var averageAwakeTimeFromNights: TimeInterval {
+        guard !sleepNights.isEmpty else { return 0 }
+        let totalAwake = sleepNights.reduce(0) { $0 + $1.totalAwakeTime }
+        return totalAwake / Double(sleepNights.count)
     }
 
     private var averageAwakeTimeInMinutes: Int {
-        Int(averageAwakeTime / 60)
+        Int(averageAwakeTimeFromNights / 60)
     }
 
     private var adjustedGoalSleepMinutes: Int {
@@ -267,8 +268,27 @@ struct SleepTrendView: View {
     }
 
     private var trendData: [SleepTimingPoint] {
-        let g = groupSleepDataByNight()
-        let pts = g.compactMap { (night, recs) -> SleepTimingPoint? in
+        let c = Calendar.current
+        var grouped:
+            [Date: [(
+                stage: String,
+                startDate: Date,
+                endDate: Date
+            )]] = [:]
+        for entry in sleepData {
+            let h = c.component(.hour, from: entry.startDate)
+            let key: Date
+            if h < 14 {
+                key = c.date(
+                    byAdding: .day, value: -1,
+                    to: c.startOfDay(for: entry.startDate))!
+            } else {
+                key = c.startOfDay(for: entry.startDate)
+            }
+            grouped[key, default: []].append(entry)
+        }
+
+        let pts = grouped.compactMap { (night, recs) -> SleepTimingPoint? in
             let nonAwake = recs.filter { $0.stage != "Awake" }
             guard
                 let first = nonAwake.min(by: { $0.startDate < $1.startDate }),
@@ -277,7 +297,10 @@ struct SleepTrendView: View {
                 return nil
             }
             return SleepTimingPoint(
-                date: night, bedtime: first.startDate, wakeTime: last.endDate)
+                date: night,
+                bedtime: first.startDate,
+                wakeTime: last.endDate
+            )
         }
         .sorted { $0.date > $1.date }
         .prefix(8)
@@ -285,24 +308,16 @@ struct SleepTrendView: View {
         return Array(pts)
     }
 
-    private func groupSleepDataByNight() -> [Date: [(
-        stage: String, startDate: Date, endDate: Date
-    )]] {
-        var r = [Date: [(stage: String, startDate: Date, endDate: Date)]]()
-        let c = Calendar.current
-        for entry in sleepData {
-            let h = c.component(.hour, from: entry.startDate)
-            let dk: Date
-            if h < 14 {
-                dk = c.date(
-                    byAdding: .day, value: -1,
-                    to: c.startOfDay(for: entry.startDate))!
-            } else {
-                dk = c.startOfDay(for: entry.startDate)
-            }
-            r[dk, default: []].append(entry)
-        }
-        return r
+    private func durationStr(_ dur: TimeInterval) -> String {
+        let h = Int(dur) / 3600
+        let m = (Int(dur) % 3600) / 60
+        return String(format: "%dh %02dm", h, m)
+    }
+
+    private func timeString(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f.string(from: date)
     }
 
     private func yAxisDomain() -> ClosedRange<Int> {
@@ -320,17 +335,5 @@ struct SleepTrendView: View {
             return 0...1440
         }
         return (earliest - 60)...(latest + 60)
-    }
-
-    private func durationStr(_ dur: TimeInterval) -> String {
-        let h = Int(dur) / 3600
-        let m = (Int(dur) % 3600) / 60
-        return String(format: "%dh %02dm", h, m)
-    }
-
-    private func timeString(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "HH:mm"
-        return f.string(from: date)
     }
 }
