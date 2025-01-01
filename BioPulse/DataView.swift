@@ -37,9 +37,9 @@ struct DataView: View {
     @State private var selectedDate: Date
     @State private var startDate: Date
 
-    // Sleep debt for the last 7 days:
+    // The total sleep debt at this moment (rolling 14-day).
     @State private var totalSleepDebt: TimeInterval = 0
-    // A dictionary of daily deltas: negative means user slept over goal that day
+    // A dictionary mapping each of the last 30 days -> rolling 14-day debt
     @State private var dailyDebtDelta: [Date: Double] = [:]
 
     init(date: Date = Date()) {
@@ -85,6 +85,7 @@ struct DataView: View {
                             } else if let sleepData = sleepData,
                                 !sleepData.isEmpty
                             {
+                                // Show last night's sleep chart
                                 SleepStagesChartView(
                                     sleepData: sleepData.map {
                                         ($0.stage, $0.startDate, $0.endDate)
@@ -92,17 +93,20 @@ struct DataView: View {
                                 )
                                 .id(sleepData.hashValue)
 
-                                // Show total debt:
-                                Text(
-                                    "Sleep Debt: \(formatTimeInterval(totalSleepDebt))"
-                                )
-                                .font(.subheadline)
-                                .foregroundColor(
-                                    totalSleepDebt > 0 ? .red : .green
-                                )
+                                // Center the Sleep Debt text
+                                HStack {
+                                    Spacer()
+                                    Text(
+                                        "Sleep Debt: \(formatTimeInterval(totalSleepDebt))"
+                                    )
+                                    .font(.subheadline)
+                                    .foregroundColor(
+                                        totalSleepDebt > 0 ? .red : .green)
+                                    Spacer()
+                                }
                                 .padding(.top, 2)
 
-                                // Show line chart for last 7 days:
+                                // 30-day chart, each day is a rolling 14-day sum
                                 SleepDebtView(dailyDebt: dailyDebtDelta)
                                     .padding(.top, 8)
 
@@ -145,7 +149,7 @@ struct DataView: View {
                 print("[DATA] View appeared")
                 loadAllData()
             }
-            .onChange(of: scenePhase) { oldPhase, newPhase in
+            .onChange(of: scenePhase) { _, newPhase in
                 if newPhase == .active {
                     print("[DATA] Scene became active")
                     loadAllData()
@@ -198,47 +202,43 @@ struct DataView: View {
     }
 
     /**
-     Load "last night" sleep plus nights for the last 7 days to compute
-     total debt + daily delta (positive or negative).
+     Load last night's sleep + the last 30 nights for the rolling 14-day sum
+     which we display in SleepDebtView plus a single total for "today."
      */
     private func loadSleepDataAndDebt() {
         guard !isLoadingSleep else {
             print("[SLEEP] Already loading sleep data")
             return
         }
-        print("[SLEEP] Loading sleep data + 7-day debt")
         isLoadingSleep = true
         sleepData = nil
 
-        let today = Date()
-        healthDataManager.fetchSleepData(for: today) { data, error in
+        // Load last night's sleep
+        healthDataManager.fetchSleepData(for: Date()) { data, error in
             DispatchQueue.main.async {
                 if let error = error {
                     print(
-                        "[SLEEP] Error loading sleep data: \(error.localizedDescription)"
+                        "[SLEEP] Error loading last night's sleep: \(error.localizedDescription)"
                     )
                 }
                 if let data = data {
-                    print(
-                        "[SLEEP] Loaded \(data.count) sleep records for last night"
-                    )
-                    let records = data.map {
+                    let recs = data.map {
                         SleepRecord(
-                            stage: $0.stage,
-                            startDate: $0.startDate,
+                            stage: $0.stage, startDate: $0.startDate,
                             endDate: $0.endDate)
                     }
-                    sleepData = records.sorted { $0.startDate < $1.startDate }
+                    sleepData = recs.sorted { $0.startDate < $1.startDate }
                 }
-                // Now fetch 7 nights to compute debt
+                // Now load 30 nights to build rolling 14-day sums
                 healthDataManager.fetchNightsOverLastNDays(
-                    7,
+                    30,
                     sleepGoalMinutes: UserDefaults.standard.integer(
                         forKey: "sleepGoal")
                 ) { fetched in
-                    let result = calculate7DayDebtDelta(fetched)
-                    totalSleepDebt = result.total
-                    dailyDebtDelta = result.daily
+                    // Convert to a day -> rolling 14-day sum
+                    let result = build30dayRolling14Debt(fetched)
+                    dailyDebtDelta = result.rolling
+                    totalSleepDebt = result.current
                     isLoadingSleep = false
                 }
             }
@@ -246,36 +246,65 @@ struct DataView: View {
     }
 
     /**
-     For each of the last 7 nights, compute difference: (goalSec - actualSlept).
-       - If negative => user slept more than goal => reduces debt
-       - If positive => user slept less => increases debt
-     We accumulate total and store each day's difference in dailyDebtDelta.
+     For each day in the last 30, sum the prior 14 nights' deficits.
+     Each daily value is clamped at 0 if negative. Also we keep track of the "most recent day"
+     for the user's current debt.
      */
-    private func calculate7DayDebtDelta(_ nights: [HealthDataManager.NightData])
-        -> (total: TimeInterval, daily: [Date: Double])
+    private func build30dayRolling14Debt(
+        _ nights: [HealthDataManager.NightData]
+    )
+        -> (rolling: [Date: Double], current: TimeInterval)
     {
         let goalSec =
             Double(UserDefaults.standard.integer(forKey: "sleepGoal")) * 60.0
-        var daily: [Date: Double] = [:]  // day -> delta
-
-        // Sort by date ascending so we can keep dayKey consistent
+        // Sort nights by ascending date
         let sorted = nights.sorted { $0.date < $1.date }
+
+        // Build a dictionary: day -> sum of (goalSec - actual) for that day
+        var dailyRaw: [Date: Double] = [:]
         for n in sorted {
             let dayKey = Calendar.current.startOfDay(for: n.date)
-            let diff = (goalSec - n.sleepDuration)  // could be negative if overslept
-            daily[dayKey] = (daily[dayKey] ?? 0) + diff
+            let diff = goalSec - n.sleepDuration  // can be negative if overslept
+            dailyRaw[dayKey] = (dailyRaw[dayKey] ?? 0) + diff
         }
-        // Now compute total by summing the daily values
-        // but as a final "net" number
-        let total = daily.values.reduce(0, +)
-        return (total, daily)
+
+        // Now for each day in the last 30, we do a 14-day sum
+        let allDays = dailyRaw.keys.sorted()
+        var rolling14: [Date: Double] = [:]
+
+        for day in allDays {
+            // find the earliest day in the 14-day window
+            guard
+                let earliest = Calendar.current.date(
+                    byAdding: .day, value: -13, to: day)
+            else { continue }
+
+            // sum dailyRaw for all days in [earliest .. day]
+            var sum14: Double = 0
+            for d in allDays {
+                if d >= earliest && d <= day {
+                    sum14 += (dailyRaw[d] ?? 0)
+                }
+            }
+            // clamp at 0 if negative
+            rolling14[day] = max(0, sum14)
+        }
+
+        // "current" = the rolling sum for the most recent day
+        if let latest = allDays.last {
+            let curr = rolling14[latest] ?? 0
+            return (rolling14, curr)
+        } else {
+            return ([:], 0)
+        }
     }
 
     private func formatTimeInterval(_ t: TimeInterval) -> String {
         let h = Int(t) / 3600
         let m = (Int(t) % 3600) / 60
-        // If t is negative, user is in "surplus" (which might be rare).
         if t < 0 {
+            // Negative means overslept more than goal, though we clamp final to 0,
+            // but let's handle if we don't clamp
             return String(format: "-%dh %02dm", abs(h), abs(m))
         } else {
             return String(format: "%dh %02dm", h, m)

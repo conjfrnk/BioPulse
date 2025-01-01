@@ -8,11 +8,15 @@
 import Charts
 import SwiftUI
 
-/// Displays a 30-day line chart, but each day's Y-value is a rolling 14-day
-/// acute sleep debt. The 'dailyDebt' dictionary should map each day -> a 14-day
-/// sum of missed sleep (seconds). We clamp at 0 to avoid negative values.
+/// Displays a line chart for the last 30 days of rolling 14-day sleep debt.
+/// - X-axis domain: [lastDate - 30 days ... lastDate].
+/// - Only four custom X-axis labels: 28d ago, 21d ago, 14d ago, 7d ago.
+/// - No vertical lines/ticks on x-axis.
+/// - The y-axis is default, so it shows horizontal grid lines/numeric labels.
+/// - The aggregator can use data older than 30 days if needed for the 14-day sum.
+/// - The chart only “displays” from 30 days ago to now.
 struct SleepDebtView: View {
-    let dailyDebt: [Date: Double]  // total acute debt in seconds for each day
+    let dailyDebt: [Date: Double]  // rolling 14-day totals in seconds, up to 30 days
 
     var body: some View {
         VStack(alignment: .leading) {
@@ -32,6 +36,7 @@ struct SleepDebtView: View {
                         .padding()
                 } else {
                     Chart {
+                        // Remove the PointMark so only the red line is visible
                         ForEach(pts.indices, id: \.self) { i in
                             let p = pts[i]
                             LineMark(
@@ -39,26 +44,29 @@ struct SleepDebtView: View {
                                 y: .value("Debt (hrs)", p.debt / 3600.0)
                             )
                             .foregroundStyle(.red)
-                            PointMark(
-                                x: .value("Date", p.date),
-                                y: .value("Debt (hrs)", p.debt / 3600.0)
-                            )
-                            .foregroundStyle(.red)
                         }
                     }
-                    .chartYScale(domain: yDomain(pts))
                     .chartXScale(domain: xDomain(pts))
                     .chartXAxis {
-                        AxisMarks(values: .stride(by: .day)) { val in
-                            if let d = val.as(Date.self) {
-                                if d >= pts.first!.date && d <= pts.last!.date {
-                                    AxisValueLabel {
-                                        Text(labelForDate(d))
-                                    }
-                                    AxisTick()
-                                    AxisGridLine()
+                        // Only four custom marks: 28d, 21d, 14d, 7d
+                        // No vertical lines or ticks
+                        AxisMarks(values: customAxisMarkers(pts)) { value in
+                            AxisValueLabel(centered: true) {
+                                if let d = value.as(Date.self) {
+                                    Text(customLabel(for: d))
+                                } else {
+                                    Text("")
                                 }
                             }
+                            AxisTick(stroke: StrokeStyle(lineWidth: 0))
+                            AxisGridLine(stroke: StrokeStyle(lineWidth: 0))
+                        }
+                    }
+                    .chartYAxis {
+                        // Default Y-axis with horizontal lines
+                        AxisMarks(preset: .automatic) { _ in
+                            AxisGridLine()
+                            AxisValueLabel()
                         }
                     }
                     .frame(height: 200)
@@ -68,37 +76,63 @@ struct SleepDebtView: View {
         }
     }
 
+    /// Sort ascending by date, clamp debt >= 0
     private func sortedPoints() -> [(date: Date, debt: Double)] {
         let sortedDates = dailyDebt.keys.sorted()
-        return sortedDates.map { (d: Date) -> (date: Date, debt: Double) in
-            let v = dailyDebt[d] ?? 0
-            return (d, max(0, v))  // clamp at 0 to avoid negative
+        return sortedDates.map { d in
+            (d, max(0, dailyDebt[d] ?? 0))
         }
     }
 
-    private func xDomain(_ pts: [(date: Date, debt: Double)]) -> ClosedRange<
-        Date
-    > {
-        guard let first = pts.first?.date, let last = pts.last?.date else {
+    /**
+     X-axis domain: [lastDate - 30d, lastDate].
+     Even if some data is older, we only *display* the last 30 days.
+     The aggregator can use older data for the 14-day rolling sums, that’s fine.
+     */
+    private func xDomain(_ pts: [(date: Date, debt: Double)])
+        -> ClosedRange<Date>
+    {
+        guard let lastDate = pts.last?.date else {
             return Date()...Date()
         }
-        return first...last
+        let earliest =
+            Calendar.current.date(byAdding: .day, value: -30, to: lastDate)
+            ?? lastDate
+        return earliest...lastDate
     }
 
-    private func yDomain(_ pts: [(date: Date, debt: Double)]) -> ClosedRange<
-        Double
-    > {
-        let values = pts.map { $0.debt / 3600.0 }
-        let minVal = values.min() ?? 0
-        let maxVal = values.max() ?? 0
-        let lower = min(0, minVal - 0.5)
-        let upper = maxVal + 0.5
-        return lower...max(upper, 1)
+    /**
+     Markers at 28, 21, 14, 7 days before lastDate.
+     Guarantee all four appear, even if they normally clamp to domain edges.
+     */
+    private func customAxisMarkers(_ pts: [(date: Date, debt: Double)])
+        -> [Date]
+    {
+        guard let lastDate = pts.last?.date else { return [] }
+        let offsets = [28, 21, 14, 7]
+
+        var markers: [Date] = []
+        for offset in offsets {
+            if let marker = Calendar.current.date(
+                byAdding: .day, value: -offset, to: lastDate)
+            {
+                markers.append(marker)
+            }
+        }
+        // We want to ensure they appear even if outside the domain.
+        // The chart will clip them visually, but we do *not* clamp so they appear on the axis.
+        return markers
     }
 
-    private func labelForDate(_ d: Date) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "M/d"
-        return f.string(from: d)
+    /**
+     Convert the difference from lastDate to a string: "28d ago," etc.
+     If dayDiff is 0 => "0d ago" or blank. Typically won't happen unless offset=0.
+     */
+    private func customLabel(for d: Date) -> String {
+        guard let lastDate = sortedPoints().last?.date else { return "" }
+        let diff = Calendar.current.dateComponents(
+            [.day], from: d, to: lastDate)
+        let dayDiff = abs(diff.day ?? 0)
+        return "\(dayDiff)d ago"
     }
 }
