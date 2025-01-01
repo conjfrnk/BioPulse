@@ -16,6 +16,9 @@ struct HRVTrendChart: View {
         VStack(alignment: .leading) {
             Text("HRV (Last 30 Days)")
                 .font(.headline)
+                // Add consistent horizontal padding for the title
+                .padding(.horizontal, 16)
+
             Chart {
                 ForEach(dailyHRV.keys.sorted(), id: \.self) { day in
                     LineMark(
@@ -27,11 +30,16 @@ struct HRVTrendChart: View {
                     .lineStyle(StrokeStyle(lineWidth: 2, dash: [5]))
                     .foregroundStyle(.gray)
             }
+            // Ensure consistent horizontal padding around the chart
+            .padding(.horizontal, 16)
+            .frame(height: 200)
             .chartXAxis {
-                AxisMarks(values: .stride(by: .day)) { value in
+                // Show x-axis label once a week
+                AxisMarks(values: .stride(by: .weekOfYear)) { value in
                     if let date = value.as(Date.self) {
                         AxisValueLabel(
-                            format: .dateTime.month(.abbreviated).day())
+                            format: .dateTime.month(.abbreviated).day()
+                        )
                     }
                 }
             }
@@ -47,6 +55,8 @@ struct RHRTrendChart: View {
         VStack(alignment: .leading) {
             Text("Resting HR (Last 30 Days)")
                 .font(.headline)
+                .padding(.horizontal, 16)
+
             Chart {
                 ForEach(dailyRHR.keys.sorted(), id: \.self) { day in
                     LineMark(
@@ -58,11 +68,14 @@ struct RHRTrendChart: View {
                     .lineStyle(StrokeStyle(lineWidth: 2, dash: [5]))
                     .foregroundStyle(.gray)
             }
+            .padding(.horizontal, 16)
+            .frame(height: 200)
             .chartXAxis {
-                AxisMarks(values: .stride(by: .day)) { value in
+                AxisMarks(values: .stride(by: .weekOfYear)) { value in
                     if let date = value.as(Date.self) {
                         AxisValueLabel(
-                            format: .dateTime.month(.abbreviated).day())
+                            format: .dateTime.month(.abbreviated).day()
+                        )
                     }
                 }
             }
@@ -77,14 +90,17 @@ struct TrendView: View {
     @State private var sleepData:
         [(stage: String, startDate: Date, endDate: Date)]?
     @State private var isLoadingSleep = false
+
     @Environment(\.scenePhase) private var scenePhase
+
     private var goalWakeTime: Date {
         let defaultWakeTime =
             Calendar.current.date(
                 bySettingHour: 7, minute: 0, second: 0, of: Date()) ?? Date()
         let timeInterval = UserDefaults.standard.double(forKey: "goalWakeTime")
         return timeInterval == 0
-            ? defaultWakeTime : Date(timeIntervalSince1970: timeInterval)
+            ? defaultWakeTime
+            : Date(timeIntervalSince1970: timeInterval)
     }
     private var goalSleepMinutes: Int {
         UserDefaults.standard.integer(forKey: "sleepGoal")
@@ -99,6 +115,7 @@ struct TrendView: View {
     @State private var dailyHRV: [Date: Double] = [:]
     @State private var hrvBaseline: Double = 0
     @State private var isLoadingHRV = false
+
     @State private var dailyRHR: [Date: Double] = [:]
     @State private var rhrBaseline: Double = 0
     @State private var isLoadingRHR = false
@@ -107,6 +124,8 @@ struct TrendView: View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
+
+                    // Sleep chart (7 days)
                     if isLoadingSleep {
                         ProgressView()
                             .frame(maxWidth: .infinity, maxHeight: 200)
@@ -121,6 +140,8 @@ struct TrendView: View {
                             .frame(maxWidth: .infinity, alignment: .center)
                             .padding()
                     }
+
+                    // HRV chart (30 days)
                     if isLoadingHRV {
                         ProgressView()
                             .frame(height: 200)
@@ -130,6 +151,8 @@ struct TrendView: View {
                         HRVTrendChart(dailyHRV: dailyHRV, baseline: hrvBaseline)
                             .frame(height: 200)
                     }
+
+                    // RHR chart (30 days)
                     if isLoadingRHR {
                         ProgressView()
                             .frame(height: 200)
@@ -173,7 +196,7 @@ struct TrendView: View {
                     loadBaselines()
                 }
             }
-            .onChange(of: scenePhase) { oldPhase, newPhase in
+            .onChange(of: scenePhase) { _, newPhase in
                 if newPhase == .active {
                     if isGoalNotSet {
                         showingSettings = true
@@ -199,6 +222,8 @@ struct TrendView: View {
         }
     }
 
+    // MARK: - Sleep Data (7 days)
+
     private func loadSleepData() {
         guard !isLoadingSleep else {
             return
@@ -217,7 +242,8 @@ struct TrendView: View {
     }
 
     private func loadSleepDataForRange(
-        startDate: Date, endDate: Date,
+        startDate: Date,
+        endDate: Date,
         completion: @escaping (
             [(stage: String, startDate: Date, endDate: Date)]
         ) -> Void
@@ -226,17 +252,24 @@ struct TrendView: View {
         let group = DispatchGroup()
         let calendar = Calendar.current
         var currentDate = startDate
+
         while currentDate <= endDate {
             group.enter()
-            healthDataManager.fetchSleepData(for: currentDate) { data, error in
+            healthDataManager.fetchSleepData(for: currentDate) { data, _ in
                 if let data = data {
                     allData.append(contentsOf: data)
                 }
                 group.leave()
             }
-            currentDate = calendar.date(
-                byAdding: .day, value: 1, to: currentDate)!
+            if let nextDay = calendar.date(
+                byAdding: .day, value: 1, to: currentDate)
+            {
+                currentDate = nextDay
+            } else {
+                break
+            }
         }
+
         group.notify(queue: .main) {
             completion(allData)
         }
@@ -248,9 +281,12 @@ struct TrendView: View {
         loadBaselines()
     }
 
+    // MARK: - HRV / RHR Baselines (30 days)
+
     private func loadBaselines() {
+        // HRV
         isLoadingHRV = true
-        healthDataManager.fetchDailyHRVOverLast30Days { data, error in
+        healthDataManager.fetchDailyHRVOverLast30Days { data, _ in
             DispatchQueue.main.async {
                 self.isLoadingHRV = false
                 if let data = data {
@@ -263,8 +299,10 @@ struct TrendView: View {
                 }
             }
         }
+
+        // RHR
         isLoadingRHR = true
-        healthDataManager.fetchDailyRestingHROverLast30Days { data, error in
+        healthDataManager.fetchDailyRestingHROverLast30Days { data, _ in
             DispatchQueue.main.async {
                 self.isLoadingRHR = false
                 if let data = data {

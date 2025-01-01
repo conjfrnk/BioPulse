@@ -8,6 +8,7 @@
 import HealthKit
 import SwiftUI
 
+// MARK: - Model for each "night" of data
 struct NightData: Identifiable {
     let id = UUID()
     let date: Date
@@ -19,13 +20,27 @@ struct NightData: Identifiable {
     let sleepEndTime: Date
 }
 
+// MARK: - NightCardView (One "card" for a given night's data)
 struct NightCardView: View {
     let nightData: NightData
-    @Environment(\.colorScheme) var colorScheme
+    let sleepBaseline: Double  // average nightly sleep, in seconds
+    let hrvBaseline: Double  // average HRV (ms)
+    let rhrBaseline: Double  // average RHR (bpm)
 
-    init(nightData: NightData) {
+    // Explicitly declare an init so Swift doesn’t generate a private memberwise init
+    init(
+        nightData: NightData,
+        sleepBaseline: Double,
+        hrvBaseline: Double,
+        rhrBaseline: Double
+    ) {
         self.nightData = nightData
+        self.sleepBaseline = sleepBaseline
+        self.hrvBaseline = hrvBaseline
+        self.rhrBaseline = rhrBaseline
     }
+
+    @Environment(\.colorScheme) var colorScheme
 
     private var dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -41,6 +56,7 @@ struct NightCardView: View {
 
     var body: some View {
         VStack(spacing: 16) {
+            // Header row
             HStack {
                 Text(dateFormatter.string(from: nightData.date))
                     .font(.subheadline)
@@ -62,6 +78,8 @@ struct NightCardView: View {
                         .font(.system(size: 14, weight: .bold))
                 }
             }
+
+            // Sleep time range
             HStack {
                 Text(
                     "\(timeFormatter.string(from: nightData.sleepStartTime)) - \(timeFormatter.string(from: nightData.sleepEndTime))"
@@ -70,7 +88,10 @@ struct NightCardView: View {
                 .foregroundColor(.secondary)
                 Spacer()
             }
+
+            // Metrics
             HStack(spacing: 20) {
+                // Sleep Duration
                 VStack(alignment: .leading) {
                     Label {
                         Text("Sleep")
@@ -83,8 +104,20 @@ struct NightCardView: View {
                     Text(formatDuration(nightData.sleepDuration))
                         .font(.system(.body, design: .rounded))
                         .bold()
+
+                    if sleepBaseline > 0 {
+                        let deviation =
+                            (nightData.sleepDuration - sleepBaseline)
+                            / sleepBaseline * 100
+                        Text(String(format: "%+.1f%%", deviation))
+                            .font(.caption)
+                            .foregroundColor(deviation >= 0 ? .green : .red)
+                    }
                 }
+
                 Spacer()
+
+                // HRV
                 VStack(alignment: .leading) {
                     Label {
                         Text("HRV")
@@ -97,8 +130,19 @@ struct NightCardView: View {
                     Text("\(Int(nightData.hrv)) ms")
                         .font(.system(.body, design: .rounded))
                         .bold()
+
+                    if hrvBaseline > 0 {
+                        let deviation =
+                            (nightData.hrv - hrvBaseline) / hrvBaseline * 100
+                        Text(String(format: "%+.1f%%", deviation))
+                            .font(.caption)
+                            .foregroundColor(deviation >= 0 ? .green : .red)
+                    }
                 }
+
                 Spacer()
+
+                // RHR
                 VStack(alignment: .leading) {
                     Label {
                         Text("RHR")
@@ -111,6 +155,16 @@ struct NightCardView: View {
                     Text("\(Int(nightData.restingHeartRate)) bpm")
                         .font(.system(.body, design: .rounded))
                         .bold()
+
+                    if rhrBaseline > 0 {
+                        let deviation =
+                            (nightData.restingHeartRate - rhrBaseline)
+                            / rhrBaseline * 100
+                        // For RHR, lower is generally better => negative = green
+                        Text(String(format: "%+.1f%%", deviation))
+                            .font(.caption)
+                            .foregroundColor(deviation <= 0 ? .green : .red)
+                    }
                 }
             }
         }
@@ -119,18 +173,24 @@ struct NightCardView: View {
             RoundedRectangle(cornerRadius: 16)
                 .fill(
                     colorScheme == .dark
-                        ? Color(.systemGray6) : Color(.systemBackground)
+                        ? Color(.systemGray6)
+                        : Color(.systemBackground)
                 )
                 .shadow(
                     color: colorScheme == .dark
-                        ? Color.black.opacity(0.3) : Color.gray.opacity(0.2),
-                    radius: 5)
+                        ? Color.black.opacity(0.3)
+                        : Color.gray.opacity(0.2),
+                    radius: 5
+                )
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16)
                 .stroke(
                     colorScheme == .dark
-                        ? Color.gray.opacity(0.3) : Color.clear, lineWidth: 1)
+                        ? Color.gray.opacity(0.3)
+                        : Color.clear,
+                    lineWidth: 1
+                )
         )
     }
 
@@ -141,6 +201,7 @@ struct NightCardView: View {
     }
 }
 
+// MARK: - ScrollToTopButton
 struct ScrollToTopButton: View {
     let action: () -> Void
     @Binding var isVisible: Bool
@@ -155,21 +216,35 @@ struct ScrollToTopButton: View {
                 .clipShape(Circle())
                 .shadow(radius: 4)
         }
+        .opacity(isVisible ? 1 : 0)
+        .animation(.easeInOut(duration: 0.3), value: isVisible)
     }
 }
 
+// MARK: - NightsList (the main list of nights, triggers loadMore)
 struct NightsList: View {
     let nights: [NightData]
     let loadMore: () -> Void
     let isLoading: Bool
 
+    // 90-day baselines
+    let sleepBaseline: Double
+    let hrvBaseline: Double
+    let rhrBaseline: Double
+
     var body: some View {
         LazyVStack(spacing: 16) {
             ForEach(nights.sorted(by: { $0.date > $1.date })) { night in
-                NightCardView(nightData: night)
-                    .padding(.horizontal)
-                    .id(night.id)
+                NightCardView(
+                    nightData: night,
+                    sleepBaseline: sleepBaseline,
+                    hrvBaseline: hrvBaseline,
+                    rhrBaseline: rhrBaseline
+                )
+                .padding(.horizontal)
+                .id(night.id)
             }
+            // Infinite scroll trigger
             if !nights.isEmpty && !isLoading {
                 Color.clear
                     .frame(height: 20)
@@ -186,17 +261,29 @@ struct NightsList: View {
     }
 }
 
+// MARK: - MainScrollView (wrapping NightsList + 'scroll to top' logic)
 struct MainScrollView: View {
     let nights: [NightData]
     let loadMore: () -> Void
     let isLoading: Bool
     @Binding var showScrollToTop: Bool
 
+    // 90-day baselines
+    let sleepBaseline: Double
+    let hrvBaseline: Double
+    let rhrBaseline: Double
+
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 NightsList(
-                    nights: nights, loadMore: loadMore, isLoading: isLoading)
+                    nights: nights,
+                    loadMore: loadMore,
+                    isLoading: isLoading,
+                    sleepBaseline: sleepBaseline,
+                    hrvBaseline: hrvBaseline,
+                    rhrBaseline: rhrBaseline
+                )
             }
             .scrollDismissesKeyboard(.immediately)
             .coordinateSpace(name: "scroll")
@@ -215,6 +302,7 @@ struct MainScrollView: View {
                     return Color.clear
                 }
             )
+            // If user taps "ScrollToTopButton"
             .onChange(of: showScrollToTop) { _, newValue in
                 if !newValue {
                     withAnimation {
@@ -226,6 +314,7 @@ struct MainScrollView: View {
     }
 }
 
+// MARK: - The main RecoveryView
 struct RecoveryView: View {
     @StateObject private var healthDataManager = HealthDataManager()
     @State private var showingSettings = false
@@ -237,6 +326,12 @@ struct RecoveryView: View {
     @State private var loadedDates: Set<String> = []
     @State private var isAuthorized = false
     @State private var isLoadingMore = false
+
+    // 90-day baselines
+    @State private var sleepBaseline: Double = 0  // average nightly sleep (seconds)
+    @State private var hrvBaseline: Double = 0  // ms
+    @State private var rhrBaseline: Double = 0  // bpm
+
     private let initialLoadCount = 10
     private let batchLoadCount = 7
     private let dateFormatter: DateFormatter = {
@@ -244,14 +339,13 @@ struct RecoveryView: View {
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter
     }()
+
     private var isGoalNotSet: Bool {
         let storedSleepGoal = UserDefaults.standard.integer(forKey: "sleepGoal")
         let storedWakeTime = UserDefaults.standard.double(
             forKey: "goalWakeTime")
         return storedSleepGoal == 0 || storedWakeTime == 0
     }
-    @State private var hrvBaseline: Double = 0
-    @State private var rhrBaseline: Double = 0
 
     var body: some View {
         NavigationView {
@@ -263,20 +357,26 @@ struct RecoveryView: View {
                     }
                 } else {
                     MainScrollView(
-                        nights: nights, loadMore: loadMoreNights,
-                        isLoading: isLoading, showScrollToTop: $showScrollToTop)
-                }
-                if showScrollToTop {
-                    ScrollToTopButton(
-                        action: {
-                            withAnimation {
-                                showScrollToTop = false
-                            }
-                        }, isVisible: $showScrollToTop
+                        nights: nights,
+                        loadMore: loadMoreNights,
+                        isLoading: isLoading,
+                        showScrollToTop: $showScrollToTop,
+                        sleepBaseline: sleepBaseline,
+                        hrvBaseline: hrvBaseline,
+                        rhrBaseline: rhrBaseline
                     )
-                    .padding(.bottom, 30)
-                    .padding(.trailing, 20)
                 }
+
+                ScrollToTopButton(
+                    action: {
+                        withAnimation {
+                            showScrollToTop = false
+                        }
+                    },
+                    isVisible: $showScrollToTop
+                )
+                .padding(.bottom, 30)
+                .padding(.trailing, 20)
             }
             .navigationTitle("Recovery")
             .toolbar {
@@ -314,7 +414,9 @@ struct RecoveryView: View {
                 if isGoalNotSet {
                     showingSettings = true
                 } else {
+                    // Load 90-day baselines
                     loadBaselines()
+                    // Load the initial batch of nights
                     loadInitialNights()
                 }
             } else {
@@ -324,7 +426,8 @@ struct RecoveryView: View {
     }
 
     private func loadBaselines() {
-        healthDataManager.fetchDailyHRVOverLast30Days { data, error in
+        // 90-day HRV
+        healthDataManager.fetchDailyHRVOverLastNDays(90) { data, _ in
             if let data = data, !data.isEmpty {
                 let avg = data.values.reduce(0, +) / Double(data.values.count)
                 DispatchQueue.main.async {
@@ -332,12 +435,20 @@ struct RecoveryView: View {
                 }
             }
         }
-        healthDataManager.fetchDailyRestingHROverLast30Days { data, error in
+        // 90-day RHR
+        healthDataManager.fetchDailyRestingHROverLastNDays(90) { data, _ in
             if let data = data, !data.isEmpty {
                 let avg = data.values.reduce(0, +) / Double(data.values.count)
                 DispatchQueue.main.async {
                     self.rhrBaseline = avg
                 }
+            }
+        }
+        // 90-day Sleep
+        healthDataManager.computeSleepBaselineOverNDays(90) { averageSleep in
+            // averageSleep is in seconds
+            DispatchQueue.main.async {
+                self.sleepBaseline = averageSleep
             }
         }
     }
@@ -355,9 +466,7 @@ struct RecoveryView: View {
     }
 
     private func loadMoreNights() {
-        guard !isLoading else {
-            return
-        }
+        guard !isLoading else { return }
         isLoading = true
         loadNights(count: batchLoadCount, startingFrom: lastLoadedDate) {
             newNights in
@@ -368,7 +477,8 @@ struct RecoveryView: View {
     }
 
     private func loadNights(
-        count: Int, startingFrom: Date = Date(),
+        count: Int,
+        startingFrom: Date = Date(),
         completion: @escaping ([NightData]) -> Void
     ) {
         let calendar = Calendar.current
@@ -376,21 +486,24 @@ struct RecoveryView: View {
         let group = DispatchGroup()
         var currentDate = startingFrom
         var datesProcessed = 0
+
         let sleepGoalMinutes = UserDefaults.standard.integer(
             forKey: "sleepGoal")
+
         while datesProcessed < count {
             let dateToProcess = calendar.startOfDay(for: currentDate)
             let dateString = dateFormatter.string(from: dateToProcess)
             if !loadedDates.contains(dateString) {
                 group.enter()
                 healthDataManager.fetchSleepData(for: dateToProcess) {
-                    sleepData, error in
+                    sleepData, _ in
                     if let sleepData = sleepData, !sleepData.isEmpty {
                         let sortedSleepData = sleepData.sorted {
                             $0.startDate < $1.startDate
                         }
                         var totalDuration: TimeInterval = 0
-                        guard let sleepStart = sortedSleepData.first?.startDate,
+                        guard
+                            let sleepStart = sortedSleepData.first?.startDate,
                             let sleepEnd = sortedSleepData.last?.endDate
                         else {
                             group.leave()
@@ -408,6 +521,7 @@ struct RecoveryView: View {
                             self.healthDataManager.fetchHeartRateDuringSleep(
                                 sleepStart: sleepStart, sleepEnd: sleepEnd
                             ) { heartRate, _ in
+
                                 let score = calculateSleepScore(
                                     sleepData: sleepData,
                                     hrv: hrv,
@@ -436,16 +550,23 @@ struct RecoveryView: View {
                 }
                 datesProcessed += 1
             }
-            currentDate =
-                calendar.date(byAdding: .day, value: -1, to: currentDate)
-                ?? currentDate
+            // Move to previous day
+            if let prevDay = calendar.date(
+                byAdding: .day, value: -1, to: currentDate)
+            {
+                currentDate = prevDay
+            } else {
+                break
+            }
         }
+
         group.notify(queue: .main) {
             let sortedNights = newNights.sorted { $0.date > $1.date }
             completion(sortedNights)
         }
     }
 
+    // Simple example from your code: combine sleep, HRV, RHR data into a single integer score
     private func calculateSleepScore(
         sleepData: [(stage: String, startDate: Date, endDate: Date)],
         hrv: Double?,
@@ -457,59 +578,55 @@ struct RecoveryView: View {
             $0.stage != "Awake" && $0.stage != "InBed"
         }.reduce(0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }
         let hoursSlept = totalSleepDuration / 3600
+
         var stageDurations: [String: TimeInterval] = [:]
         for stage in ["Deep", "REM", "Core", "Awake"] {
-            let duration = sleepData.filter { $0.stage == stage }.reduce(0) {
-                $0 + $1.endDate.timeIntervalSince($1.startDate)
-            }
+            let duration =
+                sleepData
+                .filter { $0.stage == stage }
+                .reduce(0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }
             stageDurations[stage] = duration
         }
+
+        // Some simplistic logic
         if totalSleepDuration > 0 {
-            let deepPct = stageDurations["Deep"]! / totalSleepDuration
-            if deepPct < 0.13 {
-                score -= 15
-            }
-            let remPct = stageDurations["REM"]! / totalSleepDuration
-            if remPct < 0.20 {
-                score -= 15
-            }
-            let corePct = stageDurations["Core"]! / totalSleepDuration
-            if corePct < 0.45 {
-                score -= 10
-            }
+            let deepPct = (stageDurations["Deep"] ?? 0) / totalSleepDuration
+            if deepPct < 0.13 { score -= 15 }
+
+            let remPct = (stageDurations["REM"] ?? 0) / totalSleepDuration
+            if remPct < 0.20 { score -= 15 }
+
+            let corePct = (stageDurations["Core"] ?? 0) / totalSleepDuration
+            if corePct < 0.45 { score -= 10 }
         }
+
         let totalTimeInBed = sleepData.reduce(0) {
             $0 + $1.endDate.timeIntervalSince($1.startDate)
         }
         if totalTimeInBed > 0 {
-            let wakePct = stageDurations["Awake"]! / totalTimeInBed
-            if wakePct > 0.10 {
-                score -= 10
-            }
+            let awakePct = (stageDurations["Awake"] ?? 0) / totalTimeInBed
+            if awakePct > 0.10 { score -= 10 }
         }
+
+        // Sleep duration vs goal
         let sleepGoalHours = Double(sleepGoalMinutes) / 60.0
         let durationScore = min(25, Int(25.0 * (hoursSlept / sleepGoalHours)))
         score = score - 25 + durationScore
-        if let hrv = hrv {
-            let diff = hrvBaseline - hrv
-            if diff > 10 {
-                score -= 10
-            } else if diff > 5 {
-                score -= 5
-            }
-        } else {
+
+        // HRV check
+        if let hrv = hrv, hrv < 30 {
+            score -= 5
+        } else if hrv == nil {
             score -= 5
         }
-        if let rhr = rhr {
-            let diff = rhr - rhrBaseline
-            if diff > 10 {
-                score -= 10
-            } else if diff > 5 {
-                score -= 5
-            }
-        } else {
+
+        // RHR check
+        if let rhr = rhr, rhr > 100 {
+            score -= 5
+        } else if rhr == nil {
             score -= 5
         }
+
         return max(0, min(100, score))
     }
 }
