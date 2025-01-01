@@ -19,7 +19,6 @@ struct SleepTrendView: View {
     let sleepData: [(stage: String, startDate: Date, endDate: Date)]
     let goalSleepMinutes: Int
     let goalWakeTime: Date
-
     let sleepNights: [HealthDataManager.NightData]
 
     var body: some View {
@@ -45,6 +44,7 @@ struct SleepTrendView: View {
         return f
     }
 
+    // MARK: - Main Chart Content
     private var chartContent: some View {
         VStack(alignment: .leading, spacing: 8) {
             Chart {
@@ -94,6 +94,8 @@ struct SleepTrendView: View {
         }
     }
 
+    // MARK: - Chart Elements
+
     private var sleepBars: some ChartContent {
         ForEach(trendData) { point in
             let b = minutesSinceMidnight(from: point.bedtime)
@@ -118,6 +120,7 @@ struct SleepTrendView: View {
             )
             .foregroundStyle(.blue)
             .symbolSize(50)
+
             PointMark(
                 x: .value("Date", point.date),
                 y: .value("Time", w)
@@ -163,20 +166,29 @@ struct SleepTrendView: View {
         }
     }
 
+    /**
+     The "goal lines" show a recommended bedtime & wake time that incorporate
+     a 14-night acute sleep debt shift if any.
+     */
     @ChartContentBuilder
     private var goalLines: some ChartContent {
         if let firstPoint = trendData.first {
-            let (bed, wak) = goalTimes(for: firstPoint.date)
+            let date = firstPoint.date
+            let (bed, wak) = goalTimes(for: date)
             let bm = minutesSinceMidnight(from: bed)
             let wm = minutesSinceMidnight(from: wak)
+
             RuleMark(y: .value("GoalBedtime", bm))
                 .foregroundStyle(.green.opacity(0.5))
                 .lineStyle(StrokeStyle(lineWidth: 2, dash: [5, 5]))
+
             RuleMark(y: .value("GoalWakeTime", wm))
                 .foregroundStyle(.green.opacity(0.5))
                 .lineStyle(StrokeStyle(lineWidth: 2, dash: [5, 5]))
         }
     }
+
+    // MARK: - Additional Info
 
     private var lastNightInfo: some View {
         if let lastNight = trendData.last {
@@ -211,7 +223,6 @@ struct SleepTrendView: View {
     private var recommendedBedtimeInfo: some View {
         let (recoBed, recoWake) = goalTimes(for: Date())
         return VStack(alignment: .leading, spacing: 8) {
-            // Replacing old stage-based awake calculation with the real one from the NightData array
             Text(
                 "Average Awake Time: \(durationStr(averageAwakeTimeFromNights))"
             )
@@ -228,8 +239,7 @@ struct SleepTrendView: View {
         .padding(.bottom, 8)
     }
 
-    // This was the old internal stage-based awake logic. We no longer need it, so we won't use it.
-    // We rely on the actual NightData's totalAwakeTime.
+    // MARK: - Logic for recommended bedtime with 14-night acute debt
 
     private var averageAwakeTimeFromNights: TimeInterval {
         guard !sleepNights.isEmpty else { return 0 }
@@ -252,29 +262,42 @@ struct SleepTrendView: View {
             c.date(
                 bySettingHour: comps.hour ?? 7, minute: comps.minute ?? 0,
                 second: 0, of: date) ?? date
-        let secs = Double(adjustedGoalSleepMinutes * 60)
-        let bed = c.date(byAdding: .second, value: -Int(secs), to: w) ?? w
+
+        let baseSecs = Double(adjustedGoalSleepMinutes * 60)
+        // Sum the last 14 nights up to 'date'
+        let dailyDebtSec = acute14NightDebt(upTo: date)
+
+        // For each hour of debt, shift bedtime 10 min earlier, up to 1 hour
+        let shift = min(3600, (dailyDebtSec / 3600.0) * 600.0)
+
+        let bed =
+            c.date(byAdding: .second, value: -Int(baseSecs + shift), to: w) ?? w
         return (bed, w)
     }
 
-    private func minutesSinceMidnight(from date: Date) -> Int {
-        let c = Calendar.current
-        let comps = c.dateComponents([.hour, .minute], from: date)
-        var m = comps.hour! * 60 + comps.minute!
-        if comps.hour! < 14 {
-            m += 24 * 60
+    /**
+     E.g. sum the last 14 nights' deficits, clamped at 0 if negative
+     or skipping negative if user overslept?
+     We'll let negative reduce the total, but won't go below 0 final.
+     */
+    private func acute14NightDebt(upTo date: Date) -> TimeInterval {
+        let sorted = sleepNights.sorted { $0.date < $1.date }
+        let goalSec = Double(goalSleepMinutes * 60)
+        let relevant = sorted.filter { $0.date <= date }.suffix(14)
+        var sum: Double = 0
+        for n in relevant {
+            let diff = (goalSec - n.sleepDuration)
+            sum += diff
         }
-        return m
+        return max(0, sum)
     }
+
+    // MARK: - Creating the Chart Data
 
     private var trendData: [SleepTimingPoint] {
         let c = Calendar.current
-        var grouped:
-            [Date: [(
-                stage: String,
-                startDate: Date,
-                endDate: Date
-            )]] = [:]
+        var grouped: [Date: [(stage: String, startDate: Date, endDate: Date)]] =
+            [:]
         for entry in sleepData {
             let h = c.component(.hour, from: entry.startDate)
             let key: Date
@@ -306,6 +329,16 @@ struct SleepTrendView: View {
         .prefix(8)
         .reversed()
         return Array(pts)
+    }
+
+    private func minutesSinceMidnight(from date: Date) -> Int {
+        let c = Calendar.current
+        let comps = c.dateComponents([.hour, .minute], from: date)
+        var m = comps.hour! * 60 + comps.minute!
+        if comps.hour! < 14 {
+            m += 24 * 60
+        }
+        return m
     }
 
     private func durationStr(_ dur: TimeInterval) -> String {
