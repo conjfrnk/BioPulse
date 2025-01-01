@@ -40,24 +40,25 @@ struct TrendView: View {
                             .frame(maxWidth: .infinity, alignment: .center)
                             .padding()
                     } else {
-                        // Sleep trend
+                        Text(
+                            "Average Awake Time: \(durationStr(averageAwakeTime))"
+                        )
+                        .font(.headline)
+                        .padding(.horizontal)
+
                         SleepTrendView(
                             sleepData: convertToStages(nights),
                             goalSleepMinutes: goalSleepMinutes,
                             goalWakeTime: fetchGoalWakeTime()
                         )
-
-                        // HRV trend
                         if dailyHRV.filter({ $0.value != 0 }).isEmpty {
                             Text("No HRV data (Last 30 days)")
                                 .foregroundColor(.secondary)
                         } else {
                             HRVTrendChart(dailyHRV: dailyHRV)
                                 .frame(height: 200)
-                                .padding(.bottom, 20)  // extra padding
+                                .padding(.bottom, 20)
                         }
-
-                        // RHR trend
                         if dailyRHR.filter({ $0.value != 0 }).isEmpty {
                             Text("No RHR data (Last 30 days)")
                                 .foregroundColor(.secondary)
@@ -122,15 +123,17 @@ struct TrendView: View {
         dailyRHR = [:]
 
         healthDataManager.fetchNightsOverLastNDays(
-            30, sleepGoalMinutes: goalSleepMinutes
+            90, sleepGoalMinutes: goalSleepMinutes
         ) { fetched in
+            let sorted = fetched.sorted { $0.date > $1.date }
+            nights = sorted
+            let last30 = Array(sorted.prefix(30))
             let cal = Calendar.current
-            for n in fetched {
+            for n in last30 {
                 let dayKey = cal.startOfDay(for: n.date)
                 dailyHRV[dayKey] = n.hrv
                 dailyRHR[dayKey] = n.restingHeartRate
             }
-            nights = fetched
             isLoading = false
         }
     }
@@ -143,16 +146,27 @@ struct TrendView: View {
     private func convertToStages(_ arr: [HealthDataManager.NightData]) -> [(
         stage: String, startDate: Date, endDate: Date
     )] {
-        // For illustration, we treat the entire night as "Core"
         let sorted = arr.sorted { $0.date > $1.date }
         let mapped = sorted.map {
             (
-                stage: "Core", startDate: $0.sleepStartTime,
+                stage: "Core",
+                startDate: $0.sleepStartTime,
                 endDate: $0.sleepEndTime
             )
         }
-        // Only show up to 8 nights
         return Array(mapped.prefix(8).reversed())
+    }
+
+    private var averageAwakeTime: TimeInterval {
+        guard !nights.isEmpty else { return 0 }
+        let totalAwake = nights.reduce(0) { $0 + $1.totalAwakeTime }
+        return totalAwake / Double(nights.count)
+    }
+
+    private func durationStr(_ t: TimeInterval) -> String {
+        let h = Int(t) / 3600
+        let m = (Int(t) % 3600) / 60
+        return String(format: "%dh %02dm", h, m)
     }
 
     private func fetchGoalWakeTime() -> Date {
