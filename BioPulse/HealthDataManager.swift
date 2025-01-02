@@ -23,7 +23,7 @@ public class HealthDataManager: ObservableObject {
         public var id: Date { date }
 
         public let date: Date
-        public let sleepScore: Int
+        public var sleepScore: Int
         public let hrv: Double
         public let restingHeartRate: Double
         public let sleepDuration: TimeInterval
@@ -108,10 +108,12 @@ public class HealthDataManager: ObservableObject {
             DispatchQueue.main.async { completion([]) }
             return
         }
+
         let group = DispatchGroup()
         var allNights: [NightData] = []
         let calendar = Calendar.current
         let now = Date()
+
         for i in 0..<days {
             group.enter()
             guard
@@ -133,41 +135,43 @@ public class HealthDataManager: ObservableObject {
                     group.leave()
                     return
                 }
-                let sorted = segments.sorted { $0.startDate < $1.startDate }
-                guard let earliest = sorted.first, let latest = sorted.last
+                let sortedSegs = segments.sorted { $0.startDate < $1.startDate }
+                guard let earliest = sortedSegs.first,
+                    let latest = sortedSegs.last
                 else {
                     group.leave()
                     return
                 }
                 let totalNonAwake =
-                    sorted
+                    sortedSegs
                     .filter { $0.stage != "Awake" && $0.stage != "InBed" }
                     .reduce(0.0) {
                         $0 + $1.endDate.timeIntervalSince($1.startDate)
                     }
                 let totalAwake =
-                    sorted
+                    sortedSegs
                     .filter { $0.stage == "Awake" }
                     .reduce(0.0) {
                         $0 + $1.endDate.timeIntervalSince($1.startDate)
                     }
                 let actualStart = earliest.startDate
                 let actualEnd = latest.endDate
+
                 self.fetchHRVDuringSleep(
                     sleepStart: actualStart, sleepEnd: actualEnd
                 ) { hrvVal, _ in
                     self.fetchHeartRateDuringSleep(
                         sleepStart: actualStart, sleepEnd: actualEnd
                     ) { rhrVal, _ in
-                        let score = self.calculateSleepScore(
-                            sleepData: sorted,
+                        let basicScore = self.calculateSleepScore(
+                            sleepData: sortedSegs,
                             hrv: hrvVal,
                             rhr: rhrVal,
                             sleepGoalMinutes: sleepGoalMinutes
                         )
                         let night = NightData(
                             date: endTime,
-                            sleepScore: score,
+                            sleepScore: basicScore,
                             hrv: hrvVal ?? 0,
                             restingHeartRate: rhrVal ?? 0,
                             sleepDuration: totalNonAwake,
@@ -181,9 +185,60 @@ public class HealthDataManager: ObservableObject {
                 }
             }
         }
+
         group.notify(queue: .main) {
             let sorted = allNights.sorted { $0.date > $1.date }
-            completion(sorted)
+            var updated: [NightData] = []
+            for target in sorted {
+                let older = sorted.filter { $0.date < target.date }
+                let baselineSet = Array(older.prefix(90))
+
+                let hrvVals = baselineSet.map { $0.hrv }.filter { $0 > 0 }
+                let userHRVBaseline: Double =
+                    hrvVals.isEmpty
+                    ? 0.0
+                    : (hrvVals.reduce(0, +) / Double(hrvVals.count))
+
+                let rhrVals = baselineSet.map { $0.restingHeartRate }.filter {
+                    $0 > 0
+                }
+                let userRHRBaseline: Double =
+                    rhrVals.isEmpty
+                    ? 0.0
+                    : (rhrVals.reduce(0, +) / Double(rhrVals.count))
+
+                let bedTimes = baselineSet.map {
+                    $0.sleepStartTime.timeIntervalSinceReferenceDate
+                }
+                let userBedtime: Date? =
+                    bedTimes.isEmpty
+                    ? nil
+                    : Date(
+                        timeIntervalSinceReferenceDate:
+                            bedTimes.reduce(0, +) / Double(bedTimes.count))
+
+                let newScore = self.advancedSleepScore(
+                    night: target,
+                    baselineHRV: userHRVBaseline,
+                    baselineRHR: userRHRBaseline,
+                    averageBedtime: userBedtime,
+                    sleepGoalMinutes: sleepGoalMinutes
+                )
+                let revised = NightData(
+                    date: target.date,
+                    sleepScore: newScore,
+                    hrv: target.hrv,
+                    restingHeartRate: target.restingHeartRate,
+                    sleepDuration: target.sleepDuration,
+                    sleepStartTime: target.sleepStartTime,
+                    sleepEndTime: target.sleepEndTime,
+                    totalAwakeTime: target.totalAwakeTime
+                )
+                updated.append(revised)
+            }
+
+            let final = updated.sorted { $0.date > $1.date }
+            completion(final)
         }
     }
 
@@ -416,6 +471,49 @@ public class HealthDataManager: ObservableObject {
         } else if rhr == nil {
             score -= 5
         }
+        return max(0, min(100, score))
+    }
+
+    private func advancedSleepScore(
+        night: NightData,
+        baselineHRV: Double,
+        baselineRHR: Double,
+        averageBedtime: Date?,
+        sleepGoalMinutes: Int
+    ) -> Int {
+        var score = night.sleepScore
+
+        if baselineHRV > 0 {
+            let ratio = night.hrv / baselineHRV
+            if ratio < 0.5 {
+                score -= 10
+            } else if ratio < 0.8 {
+                score -= 5
+            }
+        }
+
+        if baselineRHR > 0 {
+            let ratio = night.restingHeartRate / baselineRHR
+            if ratio > 1.3 {
+                score -= 10
+            } else if ratio > 1.1 {
+                score -= 5
+            }
+        }
+
+        if let avgB = averageBedtime {
+            let mismatch = abs(night.sleepStartTime.timeIntervalSince(avgB))
+            if mismatch > (4 * 3600) {
+                score -= 10
+            } else if mismatch > (2 * 3600) {
+                score -= 5
+            }
+        }
+
+        if night.sleepDuration < 5.0 * 3600.0 {
+            score -= 5
+        }
+
         return max(0, min(100, score))
     }
 
