@@ -461,4 +461,22 @@ public class HealthDataManager: ObservableObject {
         }
         healthStore.execute(query)
     }
+
+    public func fetchAverageHRV(
+        lastNDays: Int, completion: @escaping (Double?) -> Void
+    ) {
+        fetchNightsOverLastNDays(lastNDays, sleepGoalMinutes: 480) { nights in
+            guard !nights.isEmpty else {
+                completion(nil)
+                return
+            }
+            let validHRVs = nights.map { $0.hrv }.filter { $0 > 0 }
+            guard !validHRVs.isEmpty else {
+                completion(nil)
+                return
+            }
+            let avg = validHRVs.reduce(0, +) / Double(validHRVs.count)
+            completion(avg)
+        }
+    }
 }

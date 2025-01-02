@@ -60,12 +60,13 @@ struct EnergyView: View {
 
     @State private var nights: [HealthDataManager.NightData] = []
     @State private var isLoading = false
-
     @State private var showingSettings = false
     @State private var showingInfo = false
 
     private let logsDays = 14
     @State private var userSleepGoalHours: Double = 8
+
+    @State private var averageHRV: Double = 60
 
     @State private var baseFractions: [String: Double] = [
         "Sleep Inertia": 0.05,
@@ -75,7 +76,6 @@ struct EnergyView: View {
         "Wind-down": 0.15,
         "Melatonin Window": 0.25,
     ]
-
     @State private var milestoneFractions: [(title: String, fraction: Double)] =
         []
 
@@ -93,7 +93,6 @@ struct EnergyView: View {
     private let topMargin: CGFloat = 20
     private let bottomMargin: CGFloat = 20
 
-    // 1) Store a Date in @State so that the view can re-render each time it changes
     @State private var currentTime = Date()
 
     var body: some View {
@@ -111,7 +110,6 @@ struct EnergyView: View {
                         .offset(y: lm.offset)
                     }
 
-                    // 2) Use currentTime (refreshed every minute) for the red bar
                     if let nowOffset = offsetForTime(
                         currentTime, layout: layout)
                     {
@@ -173,11 +171,9 @@ struct EnergyView: View {
                     InfoView()
                 }
                 .onAppear {
-                    debugPrint(
-                        "[ENERGY] onAppear => load logs + build fractions")
                     loadNightData()
+                    loadAverageHRV()
                 }
-                // 3) Fire a timer every 10s to update currentTime => red bar refresh
                 .onReceive(
                     Timer.publish(every: 10, on: .main, in: .common)
                         .autoconnect()
@@ -192,14 +188,26 @@ struct EnergyView: View {
         guard !isLoading else { return }
         isLoading = true
         healthDataManager.fetchNightsOverLastNDays(
-            logsDays, sleepGoalMinutes: Int(userSleepGoalHours * 60)
+            logsDays,
+            sleepGoalMinutes: Int(userSleepGoalHours * 60)
         ) { fetched in
             nights = fetched
             isLoading = false
+
             let mismatch = computeCircadianMismatch(fetched)
             let debt = compute14DaySleepDebt(fetched)
             milestoneFractions = buildDynamicFractions(
                 mismatch: mismatch, debt: debt)
+        }
+    }
+
+    private func loadAverageHRV() {
+        healthDataManager.fetchAverageHRV(lastNDays: 7) { val in
+            guard let val = val else {
+                averageHRV = 60
+                return
+            }
+            averageHRV = val
         }
     }
 
@@ -212,11 +220,12 @@ struct EnergyView: View {
             bySettingHour: 8, minute: 0, second: 0, of: Date())!
         let allWakes = nights.map { $0.sleepEndTime }
         let avgWake = Date(
-            timeIntervalSince1970: allWakes.map { $0.timeIntervalSince1970 }
-                .reduce(0, +) / Double(allWakes.count))
-        let diff =
-            avgWake.timeIntervalSince1970 - idealWake.timeIntervalSince1970
-        return diff / 3600.0
+            timeIntervalSince1970:
+                allWakes.map { $0.timeIntervalSince1970 }.reduce(0, +)
+                / Double(allWakes.count)
+        )
+        let diff = avgWake.timeIntervalSince(idealWake) / 3600.0
+        return diff
     }
 
     private func compute14DaySleepDebt(_ nights: [HealthDataManager.NightData])
@@ -227,14 +236,16 @@ struct EnergyView: View {
         var totalDebtSec = 0.0
         for n in nights {
             let deficit = goalSec - n.sleepDuration
-            if deficit > 0 { totalDebtSec += deficit }
+            if deficit > 0 {
+                totalDebtSec += deficit
+            }
         }
         return totalDebtSec / 3600.0
     }
 
-    private func buildDynamicFractions(mismatch: Double, debt: Double) -> [(
-        title: String, fraction: Double
-    )] {
+    private func buildDynamicFractions(mismatch: Double, debt: Double)
+        -> [(title: String, fraction: Double)]
+    {
         var frac = baseFractions
 
         if mismatch < -1 {
@@ -249,6 +260,14 @@ struct EnergyView: View {
             frac["Melatonin Window", default: 0] += 0.05
             frac["Afternoon Dip", default: 0] -= 0.05
             frac["Evening Peak", default: 0] -= 0.05
+        }
+
+        // If average HRV < 50 => user might be fatigued => shift Sleep Inertia / Wind-down
+        if averageHRV < 50 {
+            frac["Sleep Inertia", default: 0] += 0.03
+            frac["Wind-down", default: 0] += 0.02
+            frac["Afternoon Dip", default: 0] -= 0.02
+            frac["Evening Peak", default: 0] -= 0.03
         }
 
         let sum = frac.values.reduce(0, +)
@@ -267,7 +286,7 @@ struct EnergyView: View {
             }
         }
 
-        var result: [(title: String, fraction: Double)] = []
+        var result: [(String, Double)] = []
         for title in milestoneOrder {
             let f = frac[title, default: 0]
             result.append((title, f))
@@ -300,10 +319,10 @@ struct EnergyView: View {
         var startFrac = 0.0
         for (title, frac) in milestoneFractions {
             let endFrac = startFrac + frac
-            let startSec = startFrac / sumFrac * dayLenSec
-            let endSec = endFrac / sumFrac * dayLenSec
-            let msStart = dayStart.addingTimeInterval(startSec)
-            let msEnd = dayStart.addingTimeInterval(endSec)
+            let sSec = (startFrac / sumFrac) * dayLenSec
+            let eSec = (endFrac / sumFrac) * dayLenSec
+            let msStart = dayStart.addingTimeInterval(sSec)
+            let msEnd = dayStart.addingTimeInterval(eSec)
             if msEnd > msStart {
                 results.append(
                     Milestone(title: title, start: msStart, end: msEnd))
@@ -347,9 +366,7 @@ struct EnergyView: View {
     private func offsetForTime(_ date: Date, layout: [LayoutMilestone])
         -> CGFloat?
     {
-        if date <= dayStart {
-            return topMargin
-        }
+        if date <= dayStart { return topMargin }
         if date >= dayEnd, let last = layout.last {
             return last.offset + last.height
         }
@@ -390,7 +407,17 @@ struct EnergyView: View {
     }
 
     private func computeRawGoalBedtime() -> Date {
-        Calendar.current.date(byAdding: .hour, value: -1, to: dayEnd) ?? dayEnd
+        let debt = compute14DaySleepDebt(nights)
+        let shiftSec = bedtimeShiftFromDebt(debt)
+        let normalBed =
+            Calendar.current.date(byAdding: .hour, value: -1, to: dayEnd)
+            ?? dayEnd
+        return normalBed.addingTimeInterval(-shiftSec)
+    }
+
+    private func bedtimeShiftFromDebt(_ debtHours: Double) -> TimeInterval {
+        let shift = min(3600, debtHours * 600)
+        return shift
     }
 
     private func timeString(_ date: Date) -> String {
