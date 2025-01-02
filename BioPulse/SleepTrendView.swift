@@ -38,13 +38,7 @@ struct SleepTrendView: View {
         }
     }
 
-    private var df: DateFormatter {
-        let f = DateFormatter()
-        f.dateFormat = "E"
-        return f
-    }
-
-    // MARK: - Main Chart Content
+    // The main chart content
     private var chartContent: some View {
         VStack(alignment: .leading, spacing: 8) {
             Chart {
@@ -94,7 +88,69 @@ struct SleepTrendView: View {
         }
     }
 
-    // MARK: - Chart Elements
+    // MARK: - Additional Info
+
+    // Show info about last night
+    private var lastNightInfo: some View {
+        if let lastNight = trendData.last {
+            return AnyView(
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Last Night:")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    HStack(spacing: 20) {
+                        VStack(alignment: .leading) {
+                            Text("Bedtime")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text(timeString(lastNight.bedtime))
+                                .font(.body)
+                        }
+                        VStack(alignment: .leading) {
+                            Text("Wake Time")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text(timeString(lastNight.wakeTime))
+                                .font(.body)
+                        }
+                    }
+                }
+                .padding(.horizontal)
+            )
+        }
+        return AnyView(EmptyView())
+    }
+
+    // Show recommended bedtime info (including Sleep Debt Adjustment)
+    private var recommendedBedtimeInfo: some View {
+        let (recoBed, recoWake, shiftSeconds) = goalTimesWithShift(for: Date())
+        let shiftMinutes = max(0, Int(shiftSeconds / 60))  // clamp negative to 0 if needed
+
+        return VStack(alignment: .leading, spacing: 8) {
+            Text(
+                "Average Awake Time: \(durationStr(averageAwakeTimeFromNights))"
+            )
+            .font(.footnote)
+            .foregroundColor(.secondary)
+
+            // The new line for Sleep Debt Adjustment
+            Text("Sleep Debt Adjustment: \(shiftMinutes) min")
+                .font(.footnote)
+                .foregroundColor(.secondary)
+
+            Text("Recommended Bedtime (Tonight): \(timeString(recoBed))")
+                .font(.footnote)
+                .foregroundColor(.secondary)
+
+            Text("Goal Wake Time: \(timeString(recoWake))")
+                .font(.footnote)
+                .foregroundColor(.secondary)
+        }
+        .padding(.horizontal)
+        .padding(.bottom, 8)
+    }
+
+    // MARK: - Chart Content Builders
 
     private var sleepBars: some ChartContent {
         ForEach(trendData) { point in
@@ -166,133 +222,98 @@ struct SleepTrendView: View {
         }
     }
 
-    /**
-     The "goal lines" show a recommended bedtime & wake time that incorporate
-     a 14-night acute sleep debt shift if any.
-     */
     @ChartContentBuilder
     private var goalLines: some ChartContent {
         if let firstPoint = trendData.first {
-            let date = firstPoint.date
-            let (bed, wak) = goalTimes(for: date)
+            // We'll just use the current day's recommended bedtime shift for demonstration
+            let (bed, wak, _) = goalTimesWithShift(for: firstPoint.date)
             let bm = minutesSinceMidnight(from: bed)
             let wm = minutesSinceMidnight(from: wak)
-
             RuleMark(y: .value("GoalBedtime", bm))
                 .foregroundStyle(.green.opacity(0.5))
                 .lineStyle(StrokeStyle(lineWidth: 2, dash: [5, 5]))
-
             RuleMark(y: .value("GoalWakeTime", wm))
                 .foregroundStyle(.green.opacity(0.5))
                 .lineStyle(StrokeStyle(lineWidth: 2, dash: [5, 5]))
         }
     }
 
-    // MARK: - Additional Info
+    // MARK: - Goal Times + Shift
 
-    private var lastNightInfo: some View {
-        if let lastNight = trendData.last {
-            return AnyView(
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Last Night:")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    HStack(spacing: 20) {
-                        VStack(alignment: .leading) {
-                            Text("Bedtime")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text(timeString(lastNight.bedtime))
-                                .font(.body)
-                        }
-                        VStack(alignment: .leading) {
-                            Text("Wake Time")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text(timeString(lastNight.wakeTime))
-                                .font(.body)
-                        }
-                    }
-                }
-                .padding(.horizontal)
-            )
-        }
-        return AnyView(EmptyView())
-    }
-
-    private var recommendedBedtimeInfo: some View {
-        let (recoBed, recoWake) = goalTimes(for: Date())
-        return VStack(alignment: .leading, spacing: 8) {
-            Text(
-                "Average Awake Time: \(durationStr(averageAwakeTimeFromNights))"
-            )
-            .font(.footnote)
-            .foregroundColor(.secondary)
-            Text("Recommended Bedtime (Tonight): \(timeString(recoBed))")
-                .font(.footnote)
-                .foregroundColor(.secondary)
-            Text("Goal Wake Time: \(timeString(recoWake))")
-                .font(.footnote)
-                .foregroundColor(.secondary)
-        }
-        .padding(.horizontal)
-        .padding(.bottom, 8)
-    }
-
-    // MARK: - Logic for recommended bedtime with 14-night acute debt
-
-    private var averageAwakeTimeFromNights: TimeInterval {
-        guard !sleepNights.isEmpty else { return 0 }
-        let totalAwake = sleepNights.reduce(0) { $0 + $1.totalAwakeTime }
-        return totalAwake / Double(sleepNights.count)
-    }
-
-    private var averageAwakeTimeInMinutes: Int {
-        Int(averageAwakeTimeFromNights / 60)
-    }
-
-    private var adjustedGoalSleepMinutes: Int {
-        goalSleepMinutes + averageAwakeTimeInMinutes
-    }
-
-    private func goalTimes(for date: Date) -> (bedtime: Date, wakeTime: Date) {
+    /**
+     We now return a 3-tuple: (bedtime, wakeTime, shiftInSeconds).
+     This function calculates how much bedtime is shifted based on the short-term debt.
+     */
+    private func goalTimesWithShift(for date: Date) -> (
+        Date, Date, TimeInterval
+    ) {
         let c = Calendar.current
         let comps = c.dateComponents([.hour, .minute], from: goalWakeTime)
         let w =
             c.date(
-                bySettingHour: comps.hour ?? 7, minute: comps.minute ?? 0,
-                second: 0, of: date) ?? date
+                bySettingHour: comps.hour ?? 7,
+                minute: comps.minute ?? 0,
+                second: 0,
+                of: date
+            ) ?? date
 
         let baseSecs = Double(adjustedGoalSleepMinutes * 60)
-        // Sum the last 14 nights up to 'date'
         let dailyDebtSec = acute14NightDebt(upTo: date)
 
-        // For each hour of debt, shift bedtime 10 min earlier, up to 1 hour
+        // For each hour of debt, shift bedtime 10 minutes earlier, up to 1 hour max
         let shift = min(3600, (dailyDebtSec / 3600.0) * 600.0)
 
         let bed =
             c.date(byAdding: .second, value: -Int(baseSecs + shift), to: w) ?? w
-        return (bed, w)
+        return (bed, w, shift)
     }
 
     /**
-     E.g. sum the last 14 nights' deficits, clamped at 0 if negative
-     or skipping negative if user overslept?
-     We'll let negative reduce the total, but won't go below 0 final.
+     Example approach: sum the last 14 nights of debt up to `date`.
+     Return the final sum in seconds. Negative if user overslept (which can reduce debt).
+     We clamp final to 0 in the bedtime shift logic if needed.
      */
     private func acute14NightDebt(upTo date: Date) -> TimeInterval {
         let sorted = sleepNights.sorted { $0.date < $1.date }
         let goalSec = Double(goalSleepMinutes * 60)
         let relevant = sorted.filter { $0.date <= date }.suffix(14)
-        var sum: Double = 0
+        var sum: TimeInterval = 0
         for n in relevant {
             let diff = (goalSec - n.sleepDuration)
             sum += diff
         }
-        return max(0, sum)
+        return sum
     }
 
-    // MARK: - Creating the Chart Data
+    // MARK: - Sizing Helpers
+
+    private func minutesSinceMidnight(from date: Date) -> Int {
+        let c = Calendar.current
+        let comps = c.dateComponents([.hour, .minute], from: date)
+        var m = comps.hour! * 60 + comps.minute!
+        if comps.hour! < 14 {
+            m += 24 * 60
+        }
+        return m
+    }
+
+    private func yAxisDomain() -> ClosedRange<Int> {
+        var bedMins: [Int] = []
+        var wakeMins: [Int] = []
+        for p in trendData {
+            bedMins.append(minutesSinceMidnight(from: p.bedtime))
+            wakeMins.append(minutesSinceMidnight(from: p.wakeTime))
+            let (gb, gw, _) = goalTimesWithShift(for: p.date)
+            bedMins.append(minutesSinceMidnight(from: gb))
+            wakeMins.append(minutesSinceMidnight(from: gw))
+        }
+        guard let earliest = bedMins.min(), let latest = wakeMins.max() else {
+            return 0...1440
+        }
+        return (earliest - 60)...(latest + 60)
+    }
+
+    // MARK: - Data Builders
 
     private var trendData: [SleepTimingPoint] {
         let c = Calendar.current
@@ -331,14 +352,26 @@ struct SleepTrendView: View {
         return Array(pts)
     }
 
-    private func minutesSinceMidnight(from date: Date) -> Int {
-        let c = Calendar.current
-        let comps = c.dateComponents([.hour, .minute], from: date)
-        var m = comps.hour! * 60 + comps.minute!
-        if comps.hour! < 14 {
-            m += 24 * 60
-        }
-        return m
+    // MARK: - Other Helpers
+
+    private var df: DateFormatter {
+        let f = DateFormatter()
+        f.dateFormat = "E"
+        return f
+    }
+
+    private var averageAwakeTimeFromNights: TimeInterval {
+        guard !sleepNights.isEmpty else { return 0 }
+        let totalAwake = sleepNights.reduce(0) { $0 + $1.totalAwakeTime }
+        return totalAwake / Double(sleepNights.count)
+    }
+
+    private var averageAwakeTimeInMinutes: Int {
+        Int(averageAwakeTimeFromNights / 60)
+    }
+
+    private var adjustedGoalSleepMinutes: Int {
+        goalSleepMinutes + averageAwakeTimeInMinutes
     }
 
     private func durationStr(_ dur: TimeInterval) -> String {
@@ -351,22 +384,5 @@ struct SleepTrendView: View {
         let f = DateFormatter()
         f.dateFormat = "HH:mm"
         return f.string(from: date)
-    }
-
-    private func yAxisDomain() -> ClosedRange<Int> {
-        var bedMins: [Int] = []
-        var wakeMins: [Int] = []
-        for p in trendData {
-            bedMins.append(minutesSinceMidnight(from: p.bedtime))
-            wakeMins.append(minutesSinceMidnight(from: p.wakeTime))
-            let (gb, gw) = goalTimes(for: p.date)
-            bedMins.append(minutesSinceMidnight(from: gb))
-            wakeMins.append(minutesSinceMidnight(from: gw))
-        }
-        guard let earliest = bedMins.min(), let latest = wakeMins.max()
-        else {
-            return 0...1440
-        }
-        return (earliest - 60)...(latest + 60)
     }
 }
