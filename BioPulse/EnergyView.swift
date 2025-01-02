@@ -64,10 +64,37 @@ struct EnergyView: View {
     @State private var showingSettings = false
     @State private var showingInfo = false
 
+    private let logsDays = 14
+    @State private var userSleepGoalHours: Double = 8
+
+    @State private var baseFractions: [String: Double] = [
+        "Sleep Inertia": 0.05,
+        "Morning Peak": 0.15,
+        "Afternoon Dip": 0.25,
+        "Evening Peak": 0.15,
+        "Wind-down": 0.15,
+        "Melatonin Window": 0.25,
+    ]
+
+    @State private var milestoneFractions: [(title: String, fraction: Double)] =
+        []
+
+    private let milestoneOrder = [
+        "Sleep Inertia",
+        "Morning Peak",
+        "Afternoon Dip",
+        "Evening Peak",
+        "Wind-down",
+        "Melatonin Window",
+    ]
+
     private let cardSpacing: CGFloat = 8
     private let sidePadding: CGFloat = 16
     private let topMargin: CGFloat = 20
     private let bottomMargin: CGFloat = 20
+
+    // 1) Store a Date in @State so that the view can re-render each time it changes
+    @State private var currentTime = Date()
 
     var body: some View {
         NavigationView {
@@ -75,7 +102,6 @@ struct EnergyView: View {
                 ZStack(alignment: .topLeading) {
                     let layout = layoutItems(for: geo.size)
 
-                    // Place each tile
                     ForEach(layout) { lm in
                         MilestoneTileView(
                             milestone: lm.milestone,
@@ -85,65 +111,58 @@ struct EnergyView: View {
                         .offset(y: lm.offset)
                     }
 
-                    // Red line for current time
-                    if let nowOffset = offsetForCurrentTime(items: layout) {
-                        // The line itself
+                    // 2) Use currentTime (refreshed every minute) for the red bar
+                    if let nowOffset = offsetForTime(
+                        currentTime, layout: layout)
+                    {
                         Rectangle()
                             .fill(Color.red)
                             .frame(width: geo.size.width, height: 2)
                             .offset(y: nowOffset - 1)
 
-                        // The text for current time (left edge, below line)
-                        let currentTimeString = timeString(Date())
+                        let currentTimeString = timeString(currentTime)
                         Text(currentTimeString)
                             .font(.caption)
                             .foregroundColor(.red)
-                            // We place it near the left edge, slightly below the line
                             .offset(x: 8, y: nowOffset + 4)
                     }
 
-                    // Dashed green line for goal bedtime (always in Melatonin Window)
                     if let bedtimeOffset = offsetForGoalBedtime(
-                        in: layout, containerWidth: geo.size.width)
+                        layout: layout, width: geo.size.width)
                     {
-                        // The dashed line
                         Path { path in
                             path.move(to: CGPoint(x: 0, y: bedtimeOffset))
                             path.addLine(
                                 to: CGPoint(x: geo.size.width, y: bedtimeOffset)
                             )
                         }
-                        .stroke(
-                            style: StrokeStyle(lineWidth: 2, dash: [5, 5])
-                        )
+                        .stroke(style: StrokeStyle(lineWidth: 2, dash: [5, 5]))
                         .foregroundColor(.green)
 
-                        // The text for goal bedtime (centered below line)
-                        let bedtimeString = timeString(computeGoalBedtime())
+                        let bedtimeString =
+                            "Bedtime: " + timeString(computeRawGoalBedtime())
                         Text(bedtimeString)
                             .font(.caption)
                             .foregroundColor(.green)
-                            // Place it centered horizontally, below the line
                             .offset(
-                                x: geo.size.width / 2
-                                    - textWidth(bedtimeString, font: .caption)
-                                    / 2,
+                                x: geo.size.width / 2 - textWidth(
+                                    bedtimeString, font: .caption) / 2,
                                 y: bedtimeOffset + 4
                             )
                     }
                 }
                 .navigationBarTitle("Energy", displayMode: .inline)
                 .navigationBarItems(
-                    leading: Button(action: {
+                    leading: Button {
                         debugPrint("[ENERGY] Info tapped")
                         showingInfo = true
-                    }) {
+                    } label: {
                         Image(systemName: "info.circle")
                     },
-                    trailing: Button(action: {
+                    trailing: Button {
                         debugPrint("[ENERGY] Settings tapped")
                         showingSettings = true
-                    }) {
+                    } label: {
                         Image(systemName: "gearshape")
                     }
                 )
@@ -154,105 +173,149 @@ struct EnergyView: View {
                     InfoView()
                 }
                 .onAppear {
-                    debugPrint("[ENERGY] onAppear - loadNightData")
+                    debugPrint(
+                        "[ENERGY] onAppear => load logs + build fractions")
                     loadNightData()
+                }
+                // 3) Fire a timer every 10s to update currentTime => red bar refresh
+                .onReceive(
+                    Timer.publish(every: 10, on: .main, in: .common)
+                        .autoconnect()
+                ) { _ in
+                    currentTime = Date()
                 }
             }
         }
     }
 
-    // MARK: - Data
-
     private func loadNightData() {
-        guard !isLoading else {
-            debugPrint("[ENERGY] Already loading nights")
-            return
-        }
+        guard !isLoading else { return }
         isLoading = true
-        healthDataManager.fetchNightsOverLastNDays(3, sleepGoalMinutes: 480) {
-            fetched in
-            debugPrint("[ENERGY] Fetched \(fetched.count) nights")
+        healthDataManager.fetchNightsOverLastNDays(
+            logsDays, sleepGoalMinutes: Int(userSleepGoalHours * 60)
+        ) { fetched in
             nights = fetched
             isLoading = false
+            let mismatch = computeCircadianMismatch(fetched)
+            let debt = compute14DaySleepDebt(fetched)
+            milestoneFractions = buildDynamicFractions(
+                mismatch: mismatch, debt: debt)
         }
     }
 
-    // If no nights, default to 7AM..11PM
+    private func computeCircadianMismatch(
+        _ nights: [HealthDataManager.NightData]
+    ) -> Double {
+        guard !nights.isEmpty else { return 0 }
+        let c = Calendar.current
+        let idealWake = c.date(
+            bySettingHour: 8, minute: 0, second: 0, of: Date())!
+        let allWakes = nights.map { $0.sleepEndTime }
+        let avgWake = Date(
+            timeIntervalSince1970: allWakes.map { $0.timeIntervalSince1970 }
+                .reduce(0, +) / Double(allWakes.count))
+        let diff =
+            avgWake.timeIntervalSince1970 - idealWake.timeIntervalSince1970
+        return diff / 3600.0
+    }
+
+    private func compute14DaySleepDebt(_ nights: [HealthDataManager.NightData])
+        -> Double
+    {
+        guard !nights.isEmpty else { return 0 }
+        let goalSec = userSleepGoalHours * 3600
+        var totalDebtSec = 0.0
+        for n in nights {
+            let deficit = goalSec - n.sleepDuration
+            if deficit > 0 { totalDebtSec += deficit }
+        }
+        return totalDebtSec / 3600.0
+    }
+
+    private func buildDynamicFractions(mismatch: Double, debt: Double) -> [(
+        title: String, fraction: Double
+    )] {
+        var frac = baseFractions
+
+        if mismatch < -1 {
+            frac["Sleep Inertia", default: 0] += 0.05
+            frac["Morning Peak", default: 0] += 0.05
+            frac["Afternoon Dip", default: 0] -= 0.05
+            frac["Evening Peak", default: 0] -= 0.05
+        }
+
+        if debt > 5 {
+            frac["Wind-down", default: 0] += 0.05
+            frac["Melatonin Window", default: 0] += 0.05
+            frac["Afternoon Dip", default: 0] -= 0.05
+            frac["Evening Peak", default: 0] -= 0.05
+        }
+
+        let sum = frac.values.reduce(0, +)
+        if sum != 0 {
+            for k in frac.keys {
+                frac[k]! = max(0, frac[k]! / sum)
+            }
+        }
+        for k in frac.keys {
+            if frac[k]! < 0 { frac[k]! = 0 }
+        }
+        let sum2 = frac.values.reduce(0, +)
+        if sum2 != 0 {
+            for k in frac.keys {
+                frac[k]! /= sum2
+            }
+        }
+
+        var result: [(title: String, fraction: Double)] = []
+        for title in milestoneOrder {
+            let f = frac[title, default: 0]
+            result.append((title, f))
+        }
+        return result
+    }
+
     private var dayStart: Date {
-        guard
-            let latestNight = nights.max(by: {
-                $0.sleepEndTime < $1.sleepEndTime
-            })
+        guard let latest = nights.max(by: { $0.sleepEndTime < $1.sleepEndTime })
         else {
             return defaultMorning()
         }
-        return latestNight.sleepEndTime
+        return latest.sleepEndTime
     }
 
     private var dayEnd: Date {
-        Calendar.current.date(byAdding: .hour, value: 16, to: dayStart)
+        let length = 24 - userSleepGoalHours
+        return Calendar.current.date(
+            byAdding: .hour, value: Int(length), to: dayStart)
             ?? defaultNight()
     }
 
     private var chainedMilestones: [Milestone] {
-        let c = Calendar.current
+        let sumFrac = milestoneFractions.reduce(0) { $0 + $1.fraction }
+        guard sumFrac > 0 else { return [] }
+        let dayLenSec = dayEnd.timeIntervalSince(dayStart)
+        guard dayLenSec > 0 else { return [] }
 
-        let inertiaStart = dayStart
-        let inertiaEnd =
-            c.date(byAdding: .hour, value: 1, to: inertiaStart) ?? dayStart
-
-        let morningPeakStart = inertiaEnd
-        let morningPeakEnd =
-            c.date(byAdding: .hour, value: 2, to: morningPeakStart)
-            ?? morningPeakStart
-
-        let afternoonDipStart = morningPeakEnd
-        let afternoonDipEnd =
-            c.date(byAdding: .hour, value: 4, to: afternoonDipStart)
-            ?? afternoonDipStart
-
-        let eveningPeakStart = afternoonDipEnd
-        let eveningPeakEnd =
-            c.date(byAdding: .hour, value: 2, to: eveningPeakStart)
-            ?? eveningPeakStart
-
-        let windDownStart = eveningPeakEnd
-        let windDownEnd =
-            c.date(byAdding: .hour, value: 2, to: windDownStart)
-            ?? windDownStart
-
-        let melatoninStart = windDownEnd
-        let melatoninEnd = dayEnd
-
-        let intervals: [Milestone] = [
-            Milestone(
-                title: "Sleep Inertia", start: inertiaStart,
-                end: min(inertiaEnd, dayEnd)),
-            Milestone(
-                title: "Morning Peak", start: morningPeakStart,
-                end: min(morningPeakEnd, dayEnd)),
-            Milestone(
-                title: "Afternoon Dip", start: afternoonDipStart,
-                end: min(afternoonDipEnd, dayEnd)),
-            Milestone(
-                title: "Evening Peak", start: eveningPeakStart,
-                end: min(eveningPeakEnd, dayEnd)),
-            Milestone(
-                title: "Wind-down", start: windDownStart,
-                end: min(windDownEnd, dayEnd)),
-            Milestone(
-                title: "Melatonin Window", start: melatoninStart,
-                end: melatoninEnd),
-        ]
-        return intervals.filter { $0.start < $0.end }
+        var results: [Milestone] = []
+        var startFrac = 0.0
+        for (title, frac) in milestoneFractions {
+            let endFrac = startFrac + frac
+            let startSec = startFrac / sumFrac * dayLenSec
+            let endSec = endFrac / sumFrac * dayLenSec
+            let msStart = dayStart.addingTimeInterval(startSec)
+            let msEnd = dayStart.addingTimeInterval(endSec)
+            if msEnd > msStart {
+                results.append(
+                    Milestone(title: title, start: msStart, end: msEnd))
+            }
+            startFrac = endFrac
+        }
+        return results
     }
-
-    // MARK: - Layout
 
     private func layoutItems(for size: CGSize) -> [LayoutMilestone] {
         let mils = chainedMilestones
         guard !mils.isEmpty else { return [] }
-
         let totalDuration = max(0, dayEnd.timeIntervalSince(dayStart))
         let spacingCount = max(0, mils.count - 1)
         let totalSpacing =
@@ -262,101 +325,73 @@ struct EnergyView: View {
         var result: [LayoutMilestone] = []
         var runningY: CGFloat = topMargin
 
-        for (index, m) in mils.enumerated() {
-            let duration = m.end.timeIntervalSince(m.start)
-            let fraction = max(0, duration / totalDuration)
-            let tileHeight = fraction * availableHeight
+        for (i, m) in mils.enumerated() {
+            let dur = m.end.timeIntervalSince(m.start)
+            let frac = dur / totalDuration
+            let tileHeight = frac * availableHeight
 
-            let layout = LayoutMilestone(
+            let lm = LayoutMilestone(
                 milestone: m,
                 offset: runningY,
                 height: tileHeight
             )
-            result.append(layout)
-
+            result.append(lm)
             runningY += tileHeight
-            if index < mils.count - 1 {
+            if i < mils.count - 1 {
                 runningY += cardSpacing
             }
         }
         return result
     }
 
-    // Convert "now" → offset, skipping tile gaps
-    private func offsetForCurrentTime(items: [LayoutMilestone]) -> CGFloat? {
-        offsetForTime(Date(), items: items)
-    }
-
-    private func offsetForTime(_ date: Date, items: [LayoutMilestone])
+    private func offsetForTime(_ date: Date, layout: [LayoutMilestone])
         -> CGFloat?
     {
-        // if date < dayStart => topMargin
         if date <= dayStart {
             return topMargin
         }
-        // if date > dayEnd => offset of last tile's bottom
-        if date >= dayEnd, let last = items.last {
+        if date >= dayEnd, let last = layout.last {
             return last.offset + last.height
         }
-
         let total = dayEnd.timeIntervalSince(dayStart)
         let dt = date.timeIntervalSince(dayStart)
-        guard total > 0, dt >= 0 else { return nil }
+        guard dt >= 0, total > 0 else { return nil }
 
         var elapsed: TimeInterval = 0
-
-        for (i, lm) in items.enumerated() {
+        for lm in layout {
             let msDur = lm.milestone.end.timeIntervalSince(lm.milestone.start)
-            if dt >= elapsed && dt <= (elapsed + msDur) {
+            if dt >= elapsed && dt <= elapsed + msDur {
                 let fraction = (dt - elapsed) / msDur
                 let offsetInTile = fraction * lm.height
                 return lm.offset + offsetInTile
             }
             elapsed += msDur
-            // we do not add 'cardSpacing' to 'elapsed' because spacing is purely UI
         }
-        return items.last.map { $0.offset + $0.height }
+        return layout.last.map { $0.offset + $0.height }
     }
 
-    // MARK: - Goal Bedtime in Melatonin Window
-
-    /**
-     We compute a "goal bedtime" then clamp it to the melatonin window. If that window doesn't exist or is zero-length, we won't show the line.
-     Return the offset for that bedtime line in [Melatonin Window].
-     */
-    private func offsetForGoalBedtime(
-        in items: [LayoutMilestone], containerWidth: CGFloat
-    ) -> CGFloat? {
-        // 1) find melatonin window
-        guard let melatoninLayout = items.last,
-            melatoninLayout.milestone.title == "Melatonin Window"
+    private func offsetForGoalBedtime(layout: [LayoutMilestone], width: CGFloat)
+        -> CGFloat?
+    {
+        guard
+            let mel = layout.first(where: {
+                $0.milestone.title == "Melatonin Window"
+            })
         else {
             return nil
         }
-        let mStart = melatoninLayout.milestone.start
-        let mEnd = melatoninLayout.milestone.end
-        guard mEnd > mStart else { return nil }
+        let s = mel.milestone.start
+        let e = mel.milestone.end
+        if e <= s { return nil }
 
-        // 2) compute raw bedtime
-        let rawBedtime = computeGoalBedtime()
-        // 3) clamp bedtime to [mStart..mEnd]
-        let clampedBedtime = min(max(rawBedtime, mStart), mEnd)
-
-        // 4) convert to offset
-        return offsetForTime(clampedBedtime, items: items)
+        let rawBed = computeRawGoalBedtime()
+        let clampBed = min(max(rawBed, s), e)
+        return offsetForTime(clampBed, layout: layout)
     }
 
-    /**
-     Example logic for "goal bedtime" => 1 hr before dayEnd
-     In a real scenario, we'd factor in sleep debt, user preference, etc.
-     */
-    private func computeGoalBedtime() -> Date {
-        // e.g. 1 hour before dayEnd
-        return Calendar.current.date(byAdding: .hour, value: -1, to: dayEnd)
-            ?? dayEnd
+    private func computeRawGoalBedtime() -> Date {
+        Calendar.current.date(byAdding: .hour, value: -1, to: dayEnd) ?? dayEnd
     }
-
-    // MARK: - Time String + measure
 
     private func timeString(_ date: Date) -> String {
         let f = DateFormatter()
@@ -364,27 +399,20 @@ struct EnergyView: View {
         return f.string(from: date)
     }
 
-    /**
-     Quick measure for text width if you want to center text under a line.
-     We create a SwiftUI invisible label & measure in a UIHostingController or
-     use the NSString approach. For simplicity, let's do an NSString measure.
-     */
     private func textWidth(_ text: String, font: Font) -> CGFloat {
-        // We'll approximate by converting Font to a UIFont
         let uiFont: UIFont
         switch font {
-        case .caption: uiFont = UIFont.preferredFont(forTextStyle: .caption1)
-        case .footnote: uiFont = UIFont.preferredFont(forTextStyle: .footnote)
-        default: uiFont = UIFont.preferredFont(forTextStyle: .body)
+        case .caption:
+            uiFont = UIFont.preferredFont(forTextStyle: .caption1)
+        case .footnote:
+            uiFont = UIFont.preferredFont(forTextStyle: .footnote)
+        default:
+            uiFont = UIFont.preferredFont(forTextStyle: .body)
         }
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: uiFont
-        ]
-        let size = (text as NSString).size(withAttributes: attributes)
+        let attrs: [NSAttributedString.Key: Any] = [.font: uiFont]
+        let size = (text as NSString).size(withAttributes: attrs)
         return size.width
     }
-
-    // MARK: - Defaults
 
     private func defaultMorning() -> Date {
         let d =
