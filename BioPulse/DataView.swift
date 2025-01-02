@@ -60,6 +60,7 @@ struct DataView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
 
+                        /*
                         // Steps
                         VStack(alignment: .leading) {
                             if isLoadingSteps {
@@ -76,6 +77,7 @@ struct DataView: View {
                         }
 
                         Divider()
+                         */
 
                         // Sleep
                         VStack(alignment: .leading) {
