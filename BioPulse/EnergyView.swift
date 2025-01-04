@@ -28,7 +28,6 @@ struct MilestoneTileView: View {
         ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color.blue.opacity(0.15))
-
             HStack {
                 Text(
                     timeString(milestone.start) + " - "
@@ -57,16 +56,13 @@ struct MilestoneTileView: View {
 
 struct EnergyView: View {
     @StateObject private var healthDataManager = HealthDataManager()
-
     @State private var nights: [HealthDataManager.NightData] = []
     @State private var isLoading = false
     @State private var showingSettings = false
     @State private var showingInfo = false
-
     private let logsDays = 14
     @State private var userSleepGoalHours: Double = 8
     @State private var averageHRV: Double = 60
-
     @State private var baseFractions: [String: Double] = [
         "Sleep Inertia": 0.05,
         "Morning Peak": 0.15,
@@ -77,7 +73,6 @@ struct EnergyView: View {
     ]
     @State private var milestoneFractions: [(title: String, fraction: Double)] =
         []
-
     private let milestoneOrder = [
         "Sleep Inertia",
         "Morning Peak",
@@ -86,12 +81,10 @@ struct EnergyView: View {
         "Wind-down",
         "Melatonin Window",
     ]
-
     private let cardSpacing: CGFloat = 8
     private let sidePadding: CGFloat = 16
     private let topMargin: CGFloat = 20
     private let bottomMargin: CGFloat = 20
-
     @State private var currentTime = Date()
 
     var body: some View {
@@ -99,37 +92,51 @@ struct EnergyView: View {
             GeometryReader { geo in
                 ZStack(alignment: .topLeading) {
                     let layout = layoutItems(for: geo.size)
+
                     Path { path in
                         let w = geo.size.width
                         let xMin = w * 0.15
                         let xMax = w * 0.75
                         let xMap: [String: CGFloat] = [
-                            "Sleep Inertia": 0.2,
-                            "Morning Peak": 0.8,
-                            "Afternoon Dip": 0.2,
-                            "Evening Peak": 0.7,
+                            "Sleep Inertia": 0.15,
+                            "Morning Peak": 1.0,
+                            "Afternoon Dip": 0.4,
+                            "Evening Peak": 0.9,
                             "Wind-down": 0.3,
-                            "Melatonin Window": 0.2,
+                            "Melatonin Window": 0.15,
                         ]
                         if !layout.isEmpty {
-                            let firstLM = layout[0]
-                            let firstMid = firstLM.offset + firstLM.height * 0.5
-                            let firstXFrac =
-                                xMap[firstLM.milestone.title] ?? 0.2
-                            let firstX = xMin + firstXFrac * (xMax - xMin)
-                            path.move(to: CGPoint(x: firstX, y: firstMid))
+                            let first = layout[0]
+                            let firstMidY = first.offset + first.height * 0.5
+                            let firstFrac = xMap[first.milestone.title] ?? 0.15
+                            let firstX = xMin + firstFrac * (xMax - xMin)
+                            path.move(to: CGPoint(x: firstX, y: firstMidY))
                             for i in 1..<layout.count {
                                 let lm = layout[i]
                                 let midY = lm.offset + lm.height * 0.5
-                                let fracX = xMap[lm.milestone.title] ?? 0.2
-                                let x = xMin + fracX * (xMax - xMin)
-                                let prevY = path.currentPoint?.y ?? firstMid
+                                let fracX = xMap[lm.milestone.title] ?? 0.15
+                                let newX = xMin + fracX * (xMax - xMin)
                                 let prevX = path.currentPoint?.x ?? firstX
+                                let prevY = path.currentPoint?.y ?? firstMidY
                                 path.addQuadCurve(
-                                    to: CGPoint(x: x, y: midY),
+                                    to: CGPoint(x: newX, y: midY),
                                     control: CGPoint(
-                                        x: (x + prevX) * 0.5,
-                                        y: (midY + prevY) * 0.5
+                                        x: (prevX + newX) * 0.5,
+                                        y: (prevY + midY) * 0.5
+                                    )
+                                )
+                            }
+                            if let bedtimeY = offsetForGoalBedtime(
+                                layout: layout, width: w)
+                            {
+                                let prevX = path.currentPoint?.x ?? firstX
+                                let prevY = path.currentPoint?.y ?? firstMidY
+                                let endX = xMin
+                                path.addQuadCurve(
+                                    to: CGPoint(x: endX, y: bedtimeY),
+                                    control: CGPoint(
+                                        x: (prevX + endX) * 0.5,
+                                        y: (prevY + bedtimeY) * 0.5
                                     )
                                 )
                             }
