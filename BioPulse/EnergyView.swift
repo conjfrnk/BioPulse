@@ -60,6 +60,7 @@ struct EnergyView: View {
     @State private var isLoading = false
     @State private var showingSettings = false
     @State private var showingInfo = false
+
     private let logsDays = 14
     @State private var userSleepGoalHours: Double = 8
     @State private var averageHRV: Double = 60
@@ -73,6 +74,7 @@ struct EnergyView: View {
     ]
     @State private var milestoneFractions: [(title: String, fraction: Double)] =
         []
+
     private let milestoneOrder = [
         "Sleep Inertia",
         "Morning Peak",
@@ -81,6 +83,7 @@ struct EnergyView: View {
         "Wind-down",
         "Melatonin Window",
     ]
+
     private let cardSpacing: CGFloat = 8
     private let sidePadding: CGFloat = 16
     private let topMargin: CGFloat = 20
@@ -92,55 +95,12 @@ struct EnergyView: View {
             GeometryReader { geo in
                 ZStack(alignment: .topLeading) {
                     let layout = layoutItems(for: geo.size)
+                    let anchors = anchorPoints(for: layout, in: geo.size)
 
                     Path { path in
-                        let w = geo.size.width
-                        let xMin = w * 0.15
-                        let xMax = w * 0.75
-                        let xMap: [String: CGFloat] = [
-                            "Sleep Inertia": 0.15,
-                            "Morning Peak": 1.0,
-                            "Afternoon Dip": 0.4,
-                            "Evening Peak": 0.9,
-                            "Wind-down": 0.3,
-                            "Melatonin Window": 0.15,
-                        ]
-                        if !layout.isEmpty {
-                            let first = layout[0]
-                            let firstMidY = first.offset + first.height * 0.5
-                            let firstFrac = xMap[first.milestone.title] ?? 0.15
-                            let firstX = xMin + firstFrac * (xMax - xMin)
-                            path.move(to: CGPoint(x: firstX, y: firstMidY))
-                            for i in 1..<layout.count {
-                                let lm = layout[i]
-                                let midY = lm.offset + lm.height * 0.5
-                                let fracX = xMap[lm.milestone.title] ?? 0.15
-                                let newX = xMin + fracX * (xMax - xMin)
-                                let prevX = path.currentPoint?.x ?? firstX
-                                let prevY = path.currentPoint?.y ?? firstMidY
-                                path.addQuadCurve(
-                                    to: CGPoint(x: newX, y: midY),
-                                    control: CGPoint(
-                                        x: (prevX + newX) * 0.5,
-                                        y: (prevY + midY) * 0.5
-                                    )
-                                )
-                            }
-                            if let bedtimeY = offsetForGoalBedtime(
-                                layout: layout, width: w)
-                            {
-                                let prevX = path.currentPoint?.x ?? firstX
-                                let prevY = path.currentPoint?.y ?? firstMidY
-                                let endX = xMin
-                                path.addQuadCurve(
-                                    to: CGPoint(x: endX, y: bedtimeY),
-                                    control: CGPoint(
-                                        x: (prevX + endX) * 0.5,
-                                        y: (prevY + bedtimeY) * 0.5
-                                    )
-                                )
-                            }
-                        }
+                        guard anchors.count > 1 else { return }
+                        // Build a catmull-rom style path
+                        catmullRomPath(path: &path, anchors: anchors)
                     }
                     .stroke(
                         Color.purple.opacity(0.75),
@@ -174,9 +134,9 @@ struct EnergyView: View {
                     if let bedtimeOffset = offsetForGoalBedtime(
                         layout: layout, width: geo.size.width)
                     {
-                        Path { path in
-                            path.move(to: CGPoint(x: 0, y: bedtimeOffset))
-                            path.addLine(
+                        Path { p in
+                            p.move(to: CGPoint(x: 0, y: bedtimeOffset))
+                            p.addLine(
                                 to: CGPoint(x: geo.size.width, y: bedtimeOffset)
                             )
                         }
@@ -384,10 +344,7 @@ struct EnergyView: View {
             let frac = dur / totalDuration
             let tileHeight = frac * availableHeight
             let lm = LayoutMilestone(
-                milestone: m,
-                offset: runningY,
-                height: tileHeight
-            )
+                milestone: m, offset: runningY, height: tileHeight)
             result.append(lm)
             runningY += tileHeight
             if i < mils.count - 1 {
@@ -395,6 +352,62 @@ struct EnergyView: View {
             }
         }
         return result
+    }
+
+    private func anchorPoints(
+        for layout: [LayoutMilestone],
+        in size: CGSize
+    ) -> [CGPoint] {
+        if layout.isEmpty { return [] }
+        let wMin = size.width * 0.15
+        let wMax = size.width * 0.75
+        let xMap: [String: CGFloat] = [
+            "Sleep Inertia": 0.15,
+            "Morning Peak": 1.0,
+            "Afternoon Dip": 0.4,
+            "Evening Peak": 0.9,
+            "Wind-down": 0.3,
+            "Melatonin Window": 0.15,
+        ]
+        var anchors: [CGPoint] = layout.map {
+            let midY = $0.offset + $0.height * 0.5
+            let frac = xMap[$0.milestone.title] ?? 0.15
+            let xVal = wMin + frac * (wMax - wMin)
+            return CGPoint(x: xVal, y: midY)
+        }
+        if let bedtime = offsetForGoalBedtime(layout: layout, width: size.width)
+        {
+            anchors.append(CGPoint(x: wMin, y: bedtime))
+        }
+        return anchors
+    }
+
+    /**
+     A Catmull-Rom style approach in cubic Bézier form.
+     Each pair of neighboring anchors forms a segment:
+       - p0, p1, p2, p3 => we define control1, control2 for p1->p2.
+    */
+    private func catmullRomPath(path: inout Path, anchors: [CGPoint]) {
+        let p = [anchors[0]] + anchors + [anchors.last!]  // pad endpoints
+        path.move(to: p[1])
+
+        for i in 1..<p.count - 2 {
+            let p0 = p[i - 1]
+            let p1 = p[i]
+            let p2 = p[i + 1]
+            let p3 = p[i + 2]
+
+            let tension: CGFloat = 0.5
+            let c1 = CGPoint(
+                x: p1.x + (p2.x - p0.x) * tension / 6,
+                y: p1.y + (p2.y - p0.y) * tension / 6
+            )
+            let c2 = CGPoint(
+                x: p2.x - (p3.x - p1.x) * tension / 6,
+                y: p2.y - (p3.y - p1.y) * tension / 6
+            )
+            path.addCurve(to: p2, control1: c1, control2: c2)
+        }
     }
 
     private func offsetForTime(_ date: Date, layout: [LayoutMilestone])
