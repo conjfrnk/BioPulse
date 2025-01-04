@@ -364,9 +364,9 @@ struct EnergyView: View {
         let xMap: [String: CGFloat] = [
             "Sleep Inertia": 0.15,
             "Morning Peak": 1.0,
-            "Afternoon Dip": 0.4,
-            "Evening Peak": 0.9,
-            "Wind-down": 0.3,
+            "Afternoon Dip": 0.65,
+            "Evening Peak": 0.85,
+            "Wind-down": 0.45,
             "Melatonin Window": 0.15,
         ]
         var anchors: [CGPoint] = layout.map {
@@ -397,7 +397,7 @@ struct EnergyView: View {
             let p2 = p[i + 1]
             let p3 = p[i + 2]
 
-            let tension: CGFloat = 0.5
+            let tension: CGFloat = 0.85
             let c1 = CGPoint(
                 x: p1.x + (p2.x - p0.x) * tension / 6,
                 y: p1.y + (p2.y - p0.y) * tension / 6
