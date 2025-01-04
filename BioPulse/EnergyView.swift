@@ -65,7 +65,6 @@ struct EnergyView: View {
 
     private let logsDays = 14
     @State private var userSleepGoalHours: Double = 8
-
     @State private var averageHRV: Double = 60
 
     @State private var baseFractions: [String: Double] = [
@@ -100,6 +99,47 @@ struct EnergyView: View {
             GeometryReader { geo in
                 ZStack(alignment: .topLeading) {
                     let layout = layoutItems(for: geo.size)
+                    Path { path in
+                        let w = geo.size.width
+                        let xMin = w * 0.15
+                        let xMax = w * 0.75
+                        let xMap: [String: CGFloat] = [
+                            "Sleep Inertia": 0.2,
+                            "Morning Peak": 0.8,
+                            "Afternoon Dip": 0.2,
+                            "Evening Peak": 0.7,
+                            "Wind-down": 0.3,
+                            "Melatonin Window": 0.2,
+                        ]
+                        if !layout.isEmpty {
+                            let firstLM = layout[0]
+                            let firstMid = firstLM.offset + firstLM.height * 0.5
+                            let firstXFrac =
+                                xMap[firstLM.milestone.title] ?? 0.2
+                            let firstX = xMin + firstXFrac * (xMax - xMin)
+                            path.move(to: CGPoint(x: firstX, y: firstMid))
+                            for i in 1..<layout.count {
+                                let lm = layout[i]
+                                let midY = lm.offset + lm.height * 0.5
+                                let fracX = xMap[lm.milestone.title] ?? 0.2
+                                let x = xMin + fracX * (xMax - xMin)
+                                let prevY = path.currentPoint?.y ?? firstMid
+                                let prevX = path.currentPoint?.x ?? firstX
+                                path.addQuadCurve(
+                                    to: CGPoint(x: x, y: midY),
+                                    control: CGPoint(
+                                        x: (x + prevX) * 0.5,
+                                        y: (midY + prevY) * 0.5
+                                    )
+                                )
+                            }
+                        }
+                    }
+                    .stroke(
+                        Color.purple.opacity(0.75),
+                        style: StrokeStyle(
+                            lineWidth: 3, lineCap: .round, lineJoin: .round)
+                    )
 
                     ForEach(layout) { lm in
                         MilestoneTileView(
@@ -114,14 +154,13 @@ struct EnergyView: View {
                         currentTime, layout: layout)
                     {
                         Rectangle()
-                            .fill(Color.red)
+                            .fill(Color.red.opacity(0.8))
                             .frame(width: geo.size.width, height: 2)
                             .offset(y: nowOffset - 1)
-
                         let currentTimeString = timeString(currentTime)
                         Text(currentTimeString)
                             .font(.caption)
-                            .foregroundColor(.red)
+                            .foregroundColor(.red.opacity(0.8))
                             .offset(x: 8, y: nowOffset + 4)
                     }
 
@@ -136,7 +175,6 @@ struct EnergyView: View {
                         }
                         .stroke(style: StrokeStyle(lineWidth: 2, dash: [5, 5]))
                         .foregroundColor(.green)
-
                         let bedtimeString =
                             "Bedtime: " + timeString(computeRawGoalBedtime())
                         Text(bedtimeString)
@@ -193,7 +231,6 @@ struct EnergyView: View {
         ) { fetched in
             nights = fetched
             isLoading = false
-
             let mismatch = computeCircadianMismatch(fetched)
             let debt = compute14DaySleepDebt(fetched)
             milestoneFractions = buildDynamicFractions(
@@ -247,29 +284,24 @@ struct EnergyView: View {
         -> [(title: String, fraction: Double)]
     {
         var frac = baseFractions
-
         if mismatch < -1 {
             frac["Sleep Inertia", default: 0] += 0.05
             frac["Morning Peak", default: 0] += 0.05
             frac["Afternoon Dip", default: 0] -= 0.05
             frac["Evening Peak", default: 0] -= 0.05
         }
-
         if debt > 5 {
             frac["Wind-down", default: 0] += 0.05
             frac["Melatonin Window", default: 0] += 0.05
             frac["Afternoon Dip", default: 0] -= 0.05
             frac["Evening Peak", default: 0] -= 0.05
         }
-
-        // If average HRV < 50 => user might be fatigued => shift Sleep Inertia / Wind-down
         if averageHRV < 50 {
             frac["Sleep Inertia", default: 0] += 0.03
             frac["Wind-down", default: 0] += 0.02
             frac["Afternoon Dip", default: 0] -= 0.02
             frac["Evening Peak", default: 0] -= 0.03
         }
-
         let sum = frac.values.reduce(0, +)
         if sum != 0 {
             for k in frac.keys {
@@ -285,7 +317,6 @@ struct EnergyView: View {
                 frac[k]! /= sum2
             }
         }
-
         var result: [(String, Double)] = []
         for title in milestoneOrder {
             let f = frac[title, default: 0]
@@ -314,7 +345,6 @@ struct EnergyView: View {
         guard sumFrac > 0 else { return [] }
         let dayLenSec = dayEnd.timeIntervalSince(dayStart)
         guard dayLenSec > 0 else { return [] }
-
         var results: [Milestone] = []
         var startFrac = 0.0
         for (title, frac) in milestoneFractions {
@@ -340,15 +370,12 @@ struct EnergyView: View {
         let totalSpacing =
             CGFloat(spacingCount) * cardSpacing + topMargin + bottomMargin
         let availableHeight = size.height - totalSpacing
-
         var result: [LayoutMilestone] = []
         var runningY: CGFloat = topMargin
-
         for (i, m) in mils.enumerated() {
             let dur = m.end.timeIntervalSince(m.start)
             let frac = dur / totalDuration
             let tileHeight = frac * availableHeight
-
             let lm = LayoutMilestone(
                 milestone: m,
                 offset: runningY,
@@ -373,7 +400,6 @@ struct EnergyView: View {
         let total = dayEnd.timeIntervalSince(dayStart)
         let dt = date.timeIntervalSince(dayStart)
         guard dt >= 0, total > 0 else { return nil }
-
         var elapsed: TimeInterval = 0
         for lm in layout {
             let msDur = lm.milestone.end.timeIntervalSince(lm.milestone.start)
@@ -400,7 +426,6 @@ struct EnergyView: View {
         let s = mel.milestone.start
         let e = mel.milestone.end
         if e <= s { return nil }
-
         let rawBed = computeRawGoalBedtime()
         let clampBed = min(max(rawBed, s), e)
         return offsetForTime(clampBed, layout: layout)
