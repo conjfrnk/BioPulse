@@ -108,7 +108,7 @@ struct EnergyView: View {
                         catmullRomPath(path: &path, anchors: idealAnchors)
                     }
                     .stroke(
-                        Color.gray.opacity(0.75),
+                        Color.gray.opacity(0.25),
                         style: StrokeStyle(
                             lineWidth: 3, lineCap: .round, lineJoin: .round)
                     )
@@ -146,13 +146,13 @@ struct EnergyView: View {
                         currentTime, layout: layout)
                     {
                         Rectangle()
-                            .fill(Color.red.opacity(0.8))
+                            .fill(Color.red.opacity(0.6))
                             .frame(width: geo.size.width, height: 2)
                             .offset(y: nowOffset - 1)
                         let currentTimeString = timeString(currentTime)
                         Text(currentTimeString)
                             .font(.caption)
-                            .foregroundColor(.red.opacity(0.8))
+                            .foregroundColor(.red.opacity(0.6))
                             .offset(x: 8, y: nowOffset + 4)
                     }
 
