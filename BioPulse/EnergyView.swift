@@ -30,8 +30,7 @@ struct MilestoneTileView: View {
                 .fill(Color.blue.opacity(0.15))
             HStack {
                 Text(
-                    timeString(milestone.start) + " - "
-                        + timeString(milestone.end)
+                    "\(timeString(milestone.start)) - \(timeString(milestone.end))"
                 )
                 .font(.caption)
                 .foregroundColor(.secondary)
@@ -62,8 +61,11 @@ struct EnergyView: View {
     @State private var showingInfo = false
 
     private let logsDays = 14
-    @State private var userSleepGoalHours: Double = 8
-    @State private var averageHRV: Double = 60
+    @State private var userSleepGoal: Int = 0
+    @State private var dailyDebtDelta: [Date: Double] = [:]
+    @State private var totalDebt: TimeInterval = 0
+    @State private var averageHRV: Double = 0
+
     @State private var baseFractions: [String: Double] = [
         "Sleep Inertia": 0.05,
         "Morning Peak": 0.15,
@@ -103,10 +105,7 @@ struct EnergyView: View {
                     .stroke(
                         Color.purple.opacity(0.75),
                         style: StrokeStyle(
-                            lineWidth: 3,
-                            lineCap: .round,
-                            lineJoin: .round
-                        )
+                            lineWidth: 3, lineCap: .round, lineJoin: .round)
                     )
 
                     ForEach(layout) { lm in
@@ -125,7 +124,6 @@ struct EnergyView: View {
                             .fill(Color.red.opacity(0.8))
                             .frame(width: geo.size.width, height: 2)
                             .offset(y: nowOffset - 1)
-
                         let currentTimeString = timeString(currentTime)
                         Text(currentTimeString)
                             .font(.caption)
@@ -144,16 +142,14 @@ struct EnergyView: View {
                         }
                         .stroke(style: StrokeStyle(lineWidth: 2, dash: [5, 5]))
                         .foregroundColor(.green)
-
                         let bedtimeString =
                             "Bedtime: " + timeString(computeRawGoalBedtime())
                         Text(bedtimeString)
                             .font(.caption)
                             .foregroundColor(.green)
                             .offset(
-                                x: geo.size.width / 2
-                                    - textWidth(bedtimeString, font: .caption)
-                                    / 2,
+                                x: geo.size.width / 2 - textWidth(
+                                    bedtimeString, font: .caption) / 2,
                                 y: bedtimeOffset + 4
                             )
                     }
@@ -161,13 +157,11 @@ struct EnergyView: View {
                 .navigationBarTitle("Energy", displayMode: .inline)
                 .navigationBarItems(
                     leading: Button {
-                        debugPrint("[ENERGY] Info tapped")
                         showingInfo = true
                     } label: {
                         Image(systemName: "info.circle")
                     },
                     trailing: Button {
-                        debugPrint("[ENERGY] Settings tapped")
                         showingSettings = true
                     } label: {
                         Image(systemName: "gearshape")
@@ -180,8 +174,8 @@ struct EnergyView: View {
                     InfoView()
                 }
                 .onAppear {
+                    loadUserGoal()
                     loadNightData()
-                    loadAverageHRV()
                 }
                 .onReceive(
                     Timer.publish(every: 10, on: .main, in: .common)
@@ -193,67 +187,60 @@ struct EnergyView: View {
         }
     }
 
+    private func loadUserGoal() {
+        userSleepGoal = UserDefaults.standard.integer(forKey: "sleepGoal")
+        if userSleepGoal <= 0 {
+            userSleepGoal = 480
+        }
+    }
+
     private func loadNightData() {
         guard !isLoading else { return }
         isLoading = true
         healthDataManager.fetchNightsOverLastNDays(
-            logsDays, sleepGoalMinutes: Int(userSleepGoalHours * 60)
+            logsDays, sleepGoalMinutes: userSleepGoal
         ) { fetched in
             nights = fetched
-            isLoading = false
-
-            let mismatch = computeCircadianMismatch(fetched)
-            let debt = compute14DaySleepDebt(fetched)
-            milestoneFractions = buildDynamicFractions(
-                mismatch: mismatch, debt: debt)
-        }
-    }
-
-    private func loadAverageHRV() {
-        healthDataManager.fetchAverageHRV(lastNDays: 7) { val in
-            guard let val = val else {
-                averageHRV = 60
-                return
+            computeDebtData()
+            healthDataManager.fetchAverageHRV(lastNDays: 7) { val in
+                averageHRV = val ?? 60
+                isLoading = false
+                let mismatch = computeCircadianMismatch(fetched)
+                milestoneFractions = buildDynamicFractions(mismatch: mismatch)
             }
-            averageHRV = val
         }
     }
 
-    private func computeCircadianMismatch(
-        _ nights: [HealthDataManager.NightData]
-    ) -> Double {
-        guard !nights.isEmpty else { return 0 }
+    private func computeDebtData() {
+        dailyDebtDelta.removeAll()
+        totalDebt = 0
+        let goalSec = Double(userSleepGoal) * 60
+        let recent = nights.suffix(7)
+        for n in recent {
+            let diff = goalSec - n.sleepDuration
+            let dayKey = Calendar.current.startOfDay(for: n.date)
+            dailyDebtDelta[dayKey] = (dailyDebtDelta[dayKey] ?? 0) + diff
+        }
+        totalDebt = dailyDebtDelta.values.reduce(0, +)
+    }
+
+    private func computeCircadianMismatch(_ arr: [HealthDataManager.NightData])
+        -> Double
+    {
+        guard !arr.isEmpty else { return 0 }
         let c = Calendar.current
         let idealWake = c.date(
             bySettingHour: 8, minute: 0, second: 0, of: Date())!
-        let allWakes = nights.map { $0.sleepEndTime }
+        let wakes = arr.map { $0.sleepEndTime }
         let avgWake = Date(
-            timeIntervalSince1970:
-                allWakes.map { $0.timeIntervalSince1970 }.reduce(0, +)
-                / Double(allWakes.count)
-        )
-        return (avgWake.timeIntervalSince(idealWake) / 3600.0)
+            timeIntervalSince1970: wakes.map { $0.timeIntervalSince1970 }
+                .reduce(0, +) / Double(wakes.count))
+        return avgWake.timeIntervalSince(idealWake) / 3600.0
     }
 
-    private func compute14DaySleepDebt(_ nights: [HealthDataManager.NightData])
-        -> Double
-    {
-        guard !nights.isEmpty else { return 0 }
-        let goalSec = userSleepGoalHours * 3600
-        var totalDebtSec = 0.0
-        for n in nights {
-            let deficit = goalSec - n.sleepDuration
-            if deficit > 0 {
-                totalDebtSec += deficit
-            }
-        }
-        return totalDebtSec / 3600.0
-    }
-
-    private func buildDynamicFractions(mismatch: Double, debt: Double)
-        -> [(title: String, fraction: Double)]
-    {
-        // Original logic for vertical fraction
+    private func buildDynamicFractions(mismatch: Double) -> [(
+        title: String, fraction: Double
+    )] {
         var frac = baseFractions
         if mismatch < -1 {
             frac["Sleep Inertia", default: 0] += 0.05
@@ -261,7 +248,7 @@ struct EnergyView: View {
             frac["Afternoon Dip", default: 0] -= 0.05
             frac["Evening Peak", default: 0] -= 0.05
         }
-        if debt > 5 {
+        if (totalDebt / 3600.0) > 5 {
             frac["Wind-down", default: 0] += 0.05
             frac["Melatonin Window", default: 0] += 0.05
             frac["Afternoon Dip", default: 0] -= 0.05
@@ -273,19 +260,19 @@ struct EnergyView: View {
             frac["Afternoon Dip", default: 0] -= 0.02
             frac["Evening Peak", default: 0] -= 0.03
         }
-        let sum = frac.values.reduce(0, +)
-        if sum != 0 {
+        let s = frac.values.reduce(0, +)
+        if s != 0 {
             for k in frac.keys {
-                frac[k]! = max(0, frac[k]! / sum)
+                frac[k]! = max(0, frac[k]! / s)
             }
         }
         for k in frac.keys {
             if frac[k]! < 0 { frac[k]! = 0 }
         }
-        let sum2 = frac.values.reduce(0, +)
-        if sum2 != 0 {
+        let s2 = frac.values.reduce(0, +)
+        if s2 != 0 {
             for k in frac.keys {
-                frac[k]! /= sum2
+                frac[k]! /= s2
             }
         }
         var result: [(String, Double)] = []
@@ -305,76 +292,62 @@ struct EnergyView: View {
     }
 
     private var dayEnd: Date {
-        let length = 24 - userSleepGoalHours
+        let length = Double(24) - (Double(userSleepGoal) / 60.0)
         return Calendar.current.date(
             byAdding: .hour, value: Int(length), to: dayStart)
             ?? defaultNight()
     }
 
     private var chainedMilestones: [Milestone] {
-        let sumFrac = milestoneFractions.reduce(0) { $0 + $1.fraction }
-        guard sumFrac > 0 else { return [] }
-        let dayLenSec = dayEnd.timeIntervalSince(dayStart)
-        guard dayLenSec > 0 else { return [] }
-
-        var results: [Milestone] = []
-        var startFrac = 0.0
+        let sf = milestoneFractions.reduce(0) { $0 + $1.fraction }
+        guard sf > 0 else { return [] }
+        let dur = dayEnd.timeIntervalSince(dayStart)
+        guard dur > 0 else { return [] }
+        var res: [Milestone] = []
+        var st = 0.0
         for (title, frac) in milestoneFractions {
-            let endFrac = startFrac + frac
-            let sSec = (startFrac / sumFrac) * dayLenSec
-            let eSec = (endFrac / sumFrac) * dayLenSec
-            let msStart = dayStart.addingTimeInterval(sSec)
-            let msEnd = dayStart.addingTimeInterval(eSec)
-            if msEnd > msStart {
-                results.append(
-                    Milestone(title: title, start: msStart, end: msEnd)
-                )
+            let e = st + frac
+            let sSec = (st / sf) * dur
+            let eSec = (e / sf) * dur
+            let msS = dayStart.addingTimeInterval(sSec)
+            let msE = dayStart.addingTimeInterval(eSec)
+            if msE > msS {
+                res.append(Milestone(title: title, start: msS, end: msE))
             }
-            startFrac = endFrac
+            st = e
         }
-        return results
+        return res
     }
 
     private func layoutItems(for size: CGSize) -> [LayoutMilestone] {
         let mils = chainedMilestones
         guard !mils.isEmpty else { return [] }
-
-        let totalDuration = max(0, dayEnd.timeIntervalSince(dayStart))
-        let spacingCount = max(0, mils.count - 1)
-        let totalSpacing =
-            CGFloat(spacingCount) * cardSpacing
-            + topMargin + bottomMargin
-        let availableHeight = size.height - totalSpacing
-
-        var result: [LayoutMilestone] = []
-        var runningY: CGFloat = topMargin
-
+        let total = dayEnd.timeIntervalSince(dayStart)
+        let scount = max(0, mils.count - 1)
+        let tSpacing = CGFloat(scount) * cardSpacing + topMargin + bottomMargin
+        let avail = size.height - tSpacing
+        var out: [LayoutMilestone] = []
+        var runY: CGFloat = topMargin
         for (i, m) in mils.enumerated() {
-            let dur = m.end.timeIntervalSince(m.start)
-            let frac = dur / totalDuration
-            let tileHeight = frac * availableHeight
-            let lm = LayoutMilestone(
-                milestone: m,
-                offset: runningY,
-                height: tileHeight
-            )
-            result.append(lm)
-            runningY += tileHeight
+            let d = m.end.timeIntervalSince(m.start)
+            let f = d / total
+            let h = f * avail
+            out.append(LayoutMilestone(milestone: m, offset: runY, height: h))
+            runY += h
             if i < mils.count - 1 {
-                runningY += cardSpacing
+                runY += cardSpacing
             }
         }
-        return result
+        return out
     }
 
     private func anchorPoints(for layout: [LayoutMilestone], in size: CGSize)
         -> [CGPoint]
     {
         if layout.isEmpty { return [] }
-
         let wMin = size.width * 0.15
         let wMax = size.width * 0.75
-
+        let readiness = readinessFactor()
         let xMap: [String: CGFloat] = [
             "Sleep Inertia": 0.15,
             "Morning Peak": 1.0,
@@ -383,57 +356,43 @@ struct EnergyView: View {
             "Wind-down": 0.45,
             "Melatonin Window": 0.15,
         ]
-
-        let readiness = readinessFactor()
-
-        var anchors: [CGPoint] = layout.map {
-            let midY = $0.offset + $0.height * 0.5
+        return layout.map {
+            let my = $0.offset + $0.height * 0.5
             let baseFrac = xMap[$0.milestone.title] ?? 0.15
-
-            let diff = baseFrac - 0.15
-            let scaled = diff * readiness
-            let finalXf = 0.15 + scaled
-
-            let xVal = wMin + finalXf * (wMax - wMin)
-            return CGPoint(x: xVal, y: midY)
+            let d = baseFrac - 0.15
+            let s = d * readiness
+            let fx = 0.15 + s
+            let xv = wMin + fx * (wMax - wMin)
+            return CGPoint(x: xv, y: my)
         }
-
-        if let bedtime = offsetForGoalBedtime(layout: layout, width: size.width)
-        {
-            anchors.append(CGPoint(x: wMin, y: bedtime))
-        }
-        return anchors
     }
 
     private func readinessFactor() -> CGFloat {
-        let recoveryScore = nights.last?.sleepScore ?? 100
-        let recoveryFrac = CGFloat(recoveryScore) / 100.0
-
-        let debtHours = compute14DaySleepDebt(nights)
-        let clamped = min(debtHours, 6.0)
-        let debtFrac = 1.0 - (clamped * 0.05)  // each hr = 5% penalty, up to 30%
-        let raw = recoveryFrac * CGFloat(debtFrac)
-        return max(0.0, min(1.0, raw))  // clamp between 0..1
+        let lastScore = nights.last?.sleepScore ?? 100
+        let rf = CGFloat(lastScore) / 100.0
+        let dh = compute14DaySleepDebt(nights) / 3600.0
+        let c = min(dh, 6.0)
+        let df = 1.0 - (c * 0.05)
+        let raw = rf * CGFloat(df)
+        return max(0, min(1, raw))
     }
 
     private func catmullRomPath(path: inout Path, anchors: [CGPoint]) {
         let p = [anchors[0]] + anchors + [anchors.last!]
         path.move(to: p[1])
-
         for i in 1..<p.count - 2 {
             let p0 = p[i - 1]
             let p1 = p[i]
             let p2 = p[i + 1]
             let p3 = p[i + 2]
-
-            let tension: CGFloat = 0.85
+            let t: CGFloat = 0.85
             let c1 = CGPoint(
-                x: p1.x + (p2.x - p0.x) * tension / 6,
-                y: p1.y + (p2.y - p0.y) * tension / 6
+                x: p1.x + (p2.x - p0.x) * t / 6,
+                y: p1.y + (p2.y - p0.y) * t / 6
             )
             let c2 = CGPoint(
-                x: p2.x - (p3.x - p1.x) * tension / 6,
-                y: p2.y - (p3.y - p1.y) * tension / 6
+                x: p2.x - (p3.x - p1.x) * t / 6,
+                y: p2.y - (p3.y - p1.y) * t / 6
             )
             path.addCurve(to: p2, control1: c1, control2: c2)
         }
@@ -449,16 +408,14 @@ struct EnergyView: View {
         let total = dayEnd.timeIntervalSince(dayStart)
         let dt = date.timeIntervalSince(dayStart)
         guard dt >= 0, total > 0 else { return nil }
-
-        var elapsed: TimeInterval = 0
+        var e: TimeInterval = 0
         for lm in layout {
             let msDur = lm.milestone.end.timeIntervalSince(lm.milestone.start)
-            if dt >= elapsed && dt <= elapsed + msDur {
-                let fraction = (dt - elapsed) / msDur
-                let offsetInTile = fraction * lm.height
-                return lm.offset + offsetInTile
+            if dt >= e && dt <= e + msDur {
+                let f = (dt - e) / msDur
+                return lm.offset + CGFloat(f) * lm.height
             }
-            elapsed += msDur
+            e += msDur
         }
         return layout.last.map { $0.offset + $0.height }
     }
@@ -470,30 +427,22 @@ struct EnergyView: View {
             let mel = layout.first(where: {
                 $0.milestone.title == "Melatonin Window"
             })
-        else {
-            return nil
-        }
+        else { return nil }
         let s = mel.milestone.start
         let e = mel.milestone.end
         if e <= s { return nil }
-
         let rawBed = computeRawGoalBedtime()
-        let clampBed = min(max(rawBed, s), e)
-        return offsetForTime(clampBed, layout: layout)
+        let cb = min(max(rawBed, s), e)
+        return offsetForTime(cb, layout: layout)
     }
 
     private func computeRawGoalBedtime() -> Date {
-        let debt = compute14DaySleepDebt(nights)
-        let shiftSec = bedtimeShiftFromDebt(debt)
+        let dh = compute14DaySleepDebt(nights)
+        let shiftSec = min(3600, dh * 600)
         let normalBed =
             Calendar.current.date(byAdding: .hour, value: -1, to: dayEnd)
             ?? dayEnd
         return normalBed.addingTimeInterval(-shiftSec)
-    }
-
-    private func bedtimeShiftFromDebt(_ debtHours: Double) -> TimeInterval {
-        let shift = min(3600, debtHours * 600)
-        return shift
     }
 
     private func timeString(_ date: Date) -> String {
@@ -505,32 +454,38 @@ struct EnergyView: View {
     private func textWidth(_ text: String, font: Font) -> CGFloat {
         let uiFont: UIFont
         switch font {
-        case .caption:
-            uiFont = UIFont.preferredFont(forTextStyle: .caption1)
-        case .footnote:
-            uiFont = UIFont.preferredFont(forTextStyle: .footnote)
-        default:
-            uiFont = UIFont.preferredFont(forTextStyle: .body)
+        case .caption: uiFont = UIFont.preferredFont(forTextStyle: .caption1)
+        case .footnote: uiFont = UIFont.preferredFont(forTextStyle: .footnote)
+        default: uiFont = UIFont.preferredFont(forTextStyle: .body)
         }
         let attrs: [NSAttributedString.Key: Any] = [.font: uiFont]
-        let size = (text as NSString).size(withAttributes: attrs)
-        return size.width
+        return (text as NSString).size(withAttributes: attrs).width
     }
 
     private func defaultMorning() -> Date {
-        let d =
-            Calendar.current.date(
-                bySettingHour: 7, minute: 0, second: 0, of: Date()) ?? Date()
-        debugPrint("[ENERGY] defaultMorning ->", d)
-        return d
+        Calendar.current.date(
+            bySettingHour: 7, minute: 0, second: 0, of: Date()) ?? Date()
     }
 
     private func defaultNight() -> Date {
-        let d =
-            Calendar.current.date(
-                bySettingHour: 23, minute: 0, second: 0, of: Date())
+        Calendar.current.date(
+            bySettingHour: 23, minute: 0, second: 0, of: Date())
             ?? Date().addingTimeInterval(57600)
-        debugPrint("[ENERGY] defaultNight ->", d)
-        return d
+    }
+
+    private func compute14DaySleepDebt(_ nights: [HealthDataManager.NightData])
+        -> Double
+    {
+        let recent = nights.suffix(14)
+        guard !recent.isEmpty else { return 0 }
+        let goalSec = Double(userSleepGoal) * 60
+        var total: Double = 0
+        for n in recent {
+            let diff = goalSec - n.sleepDuration
+            if diff > 0 {
+                total += diff
+            }
+        }
+        return total
     }
 }
