@@ -383,7 +383,7 @@ struct EnergyView: View {
             "Wind-down": 0.45,
             "Melatonin Window": 0.15,
         ]
-        var out: [CGPoint] = layout.map {
+        let out: [CGPoint] = layout.map {
             let my = $0.offset + $0.height * 0.5
             let baseFrac = xMap[$0.milestone.title] ?? 0.15
             let d = baseFrac - 0.15
