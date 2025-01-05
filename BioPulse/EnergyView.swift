@@ -96,18 +96,42 @@ struct EnergyView: View {
             GeometryReader { geo in
                 ZStack(alignment: .topLeading) {
                     let layout = layoutItems(for: geo.size)
-                    let anchors = anchorPoints(for: layout, in: geo.size)
 
+                    // 1) Draw "perfect readiness" line (grey, behind)
+                    let idealAnchors = anchorPoints(
+                        for: layout,
+                        in: geo.size,
+                        readiness: 1.0
+                    )
                     Path { path in
-                        guard anchors.count > 1 else { return }
-                        catmullRomPath(path: &path, anchors: anchors)
+                        guard idealAnchors.count > 1 else { return }
+                        catmullRomPath(path: &path, anchors: idealAnchors)
+                    }
+                    .stroke(
+                        Color.gray.opacity(0.75),
+                        style: StrokeStyle(
+                            lineWidth: 3, lineCap: .round, lineJoin: .round)
+                    )
+                    .zIndex(0)
+
+                    // 2) Draw user's readiness line (purple, front)
+                    let userAnchors = anchorPoints(
+                        for: layout,
+                        in: geo.size,
+                        readiness: readinessFactor()
+                    )
+                    Path { path in
+                        guard userAnchors.count > 1 else { return }
+                        catmullRomPath(path: &path, anchors: userAnchors)
                     }
                     .stroke(
                         Color.purple.opacity(0.75),
                         style: StrokeStyle(
                             lineWidth: 3, lineCap: .round, lineJoin: .round)
                     )
+                    .zIndex(1)
 
+                    // 3) Place milestones
                     ForEach(layout) { lm in
                         MilestoneTileView(
                             milestone: lm.milestone,
@@ -117,6 +141,7 @@ struct EnergyView: View {
                         .offset(y: lm.offset)
                     }
 
+                    // 4) Red line for current time
                     if let nowOffset = offsetForTime(
                         currentTime, layout: layout)
                     {
@@ -131,6 +156,7 @@ struct EnergyView: View {
                             .offset(x: 8, y: nowOffset + 4)
                     }
 
+                    // 5) Dashed green line for goal bedtime
                     if let bedtimeOffset = offsetForGoalBedtime(
                         layout: layout, width: geo.size.width)
                     {
@@ -341,13 +367,14 @@ struct EnergyView: View {
         return out
     }
 
-    private func anchorPoints(for layout: [LayoutMilestone], in size: CGSize)
-        -> [CGPoint]
-    {
+    private func anchorPoints(
+        for layout: [LayoutMilestone],
+        in size: CGSize,
+        readiness: CGFloat
+    ) -> [CGPoint] {
         if layout.isEmpty { return [] }
         let wMin = size.width * 0.15
         let wMax = size.width * 0.75
-        let readiness = readinessFactor()
         let xMap: [String: CGFloat] = [
             "Sleep Inertia": 0.15,
             "Morning Peak": 1.0,
@@ -356,15 +383,16 @@ struct EnergyView: View {
             "Wind-down": 0.45,
             "Melatonin Window": 0.15,
         ]
-        return layout.map {
+        var out: [CGPoint] = layout.map {
             let my = $0.offset + $0.height * 0.5
             let baseFrac = xMap[$0.milestone.title] ?? 0.15
             let d = baseFrac - 0.15
-            let s = d * readiness
-            let fx = 0.15 + s
-            let xv = wMin + fx * (wMax - wMin)
+            let scaled = d * readiness
+            let finalFrac = 0.15 + scaled
+            let xv = wMin + finalFrac * (wMax - wMin)
             return CGPoint(x: xv, y: my)
         }
+        return out
     }
 
     private func readinessFactor() -> CGFloat {
@@ -445,6 +473,22 @@ struct EnergyView: View {
         return normalBed.addingTimeInterval(-shiftSec)
     }
 
+    private func compute14DaySleepDebt(_ nights: [HealthDataManager.NightData])
+        -> Double
+    {
+        let recent = nights.suffix(14)
+        guard !recent.isEmpty else { return 0 }
+        let goalSec = Double(userSleepGoal) * 60
+        var total: Double = 0
+        for n in recent {
+            let diff = goalSec - n.sleepDuration
+            if diff > 0 {
+                total += diff
+            }
+        }
+        return total
+    }
+
     private func timeString(_ date: Date) -> String {
         let f = DateFormatter()
         f.dateFormat = "HH:mm"
@@ -471,21 +515,5 @@ struct EnergyView: View {
         Calendar.current.date(
             bySettingHour: 23, minute: 0, second: 0, of: Date())
             ?? Date().addingTimeInterval(57600)
-    }
-
-    private func compute14DaySleepDebt(_ nights: [HealthDataManager.NightData])
-        -> Double
-    {
-        let recent = nights.suffix(14)
-        guard !recent.isEmpty else { return 0 }
-        let goalSec = Double(userSleepGoal) * 60
-        var total: Double = 0
-        for n in recent {
-            let diff = goalSec - n.sleepDuration
-            if diff > 0 {
-                total += diff
-            }
-        }
-        return total
     }
 }
