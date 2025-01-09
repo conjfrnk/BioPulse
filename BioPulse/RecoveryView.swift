@@ -16,6 +16,7 @@ struct RecoveryView: View {
     @State private var rhrBaseline: Double = 0
     @State private var showingSettings = false
     @State private var showingInfo = false
+    @State private var expandedNight: HealthDataManager.NightData? = nil
     private let initialLoadCount = 10
     private let batchLoadCount = 7
 
@@ -25,54 +26,35 @@ struct RecoveryView: View {
 
     var body: some View {
         NavigationView {
-            ZStack(alignment: .bottomTrailing) {
-                if nights.isEmpty && !isLoading {
-                    VStack {
-                        Text("No data available")
-                            .foregroundColor(.secondary)
-                    }
-                } else {
-                    MainScrollView(
-                        nights: nights,
-                        loadMore: loadMoreNights,
-                        isLoading: isLoading,
-                        showScrollToTop: $showScrollToTop,
-                        sleepGoalMinutes: sleepGoalMinutes,
-                        hrvBaseline: hrvBaseline,
-                        rhrBaseline: rhrBaseline
-                    )
-                }
-                if showScrollToTop {
-                    Button(action: {
-                        withAnimation {
-                            showScrollToTop = false
+            ZStack {
+                contentView
+                    .blur(radius: expandedNight == nil ? 0 : 5)
+                if let night = expandedNight {
+                    Color.black.opacity(0.4)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            expandedNight = nil
                         }
-                    }) {
-                        Image(systemName: "arrow.up")
-                            .font(.headline)
-                            .foregroundColor(.white)
-                            .padding()
-                            .background(Color.blue)
-                            .clipShape(Circle())
-                            .shadow(radius: 4)
+                    ExpandedNightView(nightData: night) {
+                        expandedNight = nil
                     }
-                    .padding(.bottom, 30)
-                    .padding(.trailing, 20)
+                    .transition(.scale)
+                    .zIndex(2)
                 }
             }
             .navigationTitle("Recovery")
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: {
+                    Button {
                         showingInfo = true
-                    }) {
+                    } label: {
                         Image(systemName: "info.circle")
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: {
+                    Button {
                         showingSettings = true
-                    }) {
+                    } label: {
                         Image(systemName: "gearshape")
                     }
                 }
@@ -92,6 +74,45 @@ struct RecoveryView: View {
             if !isShowing && wasShowing {
                 loadBaselines()
                 loadInitialNights()
+            }
+        }
+    }
+
+    private var contentView: some View {
+        ZStack(alignment: .bottomTrailing) {
+            if nights.isEmpty && !isLoading {
+                VStack {
+                    Text("No data available")
+                        .foregroundColor(.secondary)
+                }
+            } else {
+                MainScrollView(
+                    nights: nights,
+                    loadMore: loadMoreNights,
+                    isLoading: isLoading,
+                    showScrollToTop: $showScrollToTop,
+                    sleepGoalMinutes: sleepGoalMinutes,
+                    hrvBaseline: hrvBaseline,
+                    rhrBaseline: rhrBaseline,
+                    onNightTap: { expandedNight = $0 }
+                )
+            }
+            if showScrollToTop {
+                Button {
+                    withAnimation {
+                        showScrollToTop = false
+                    }
+                } label: {
+                    Image(systemName: "arrow.up")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .padding()
+                        .background(Color.blue)
+                        .clipShape(Circle())
+                        .shadow(radius: 4)
+                }
+                .padding(.bottom, 30)
+                .padding(.trailing, 20)
             }
         }
     }
@@ -152,6 +173,7 @@ struct MainScrollView: View {
     let sleepGoalMinutes: Int
     let hrvBaseline: Double
     let rhrBaseline: Double
+    let onNightTap: (HealthDataManager.NightData) -> Void
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -162,7 +184,8 @@ struct MainScrollView: View {
                     isLoading: isLoading,
                     sleepGoalMinutes: sleepGoalMinutes,
                     hrvBaseline: hrvBaseline,
-                    rhrBaseline: rhrBaseline
+                    rhrBaseline: rhrBaseline,
+                    onNightTap: onNightTap
                 )
             }
             .coordinateSpace(name: "scroll")
@@ -199,6 +222,7 @@ struct NightsList: View {
     let sleepGoalMinutes: Int
     let hrvBaseline: Double
     let rhrBaseline: Double
+    let onNightTap: (HealthDataManager.NightData) -> Void
 
     var body: some View {
         LazyVStack(spacing: 16) {
@@ -211,6 +235,9 @@ struct NightsList: View {
                 )
                 .padding(.horizontal)
                 .id(night.id)
+                .onTapGesture {
+                    onNightTap(night)
+                }
             }
             if !nights.isEmpty && !isLoading {
                 Color.clear
@@ -231,7 +258,7 @@ struct NightCardView: View {
     let sleepGoalMinutes: Int
     let hrvBaseline: Double
     let rhrBaseline: Double
-    
+
     public init(
         nightData: HealthDataManager.NightData,
         sleepGoalMinutes: Int,
@@ -243,21 +270,18 @@ struct NightCardView: View {
         self.hrvBaseline = hrvBaseline
         self.rhrBaseline = rhrBaseline
     }
-    
-    @Environment(\.colorScheme) var colorScheme
 
+    @Environment(\.colorScheme) var colorScheme
     private var dateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "EEE, MMM d"
         return f
     }()
-
     private var timeFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "HH:mm"
         return f
     }()
-
     var body: some View {
         VStack(spacing: 16) {
             HStack {
@@ -377,7 +401,6 @@ struct NightCardView: View {
                 )
         )
     }
-
     private func formatDuration(_ dur: TimeInterval) -> String {
         let h = Int(dur) / 3600
         let m = (Int(dur) % 3600) / 60
