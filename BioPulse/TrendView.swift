@@ -40,12 +40,11 @@ struct TrendView: View {
                             .frame(maxWidth: .infinity, alignment: .center)
                             .padding()
                     } else {
-                        // Removed the "Average Awake Time" text from here
                         SleepTrendView(
                             sleepData: convertToStages(nights),
                             goalSleepMinutes: goalSleepMinutes,
                             goalWakeTime: fetchGoalWakeTime(),
-                            sleepNights: nights  // passing entire array
+                            sleepNights: nights
                         )
                         if dailyHRV.filter({ $0.value != 0 }).isEmpty {
                             Text("No HRV data (Last 30 days)")
@@ -108,16 +107,20 @@ struct TrendView: View {
             .sheet(isPresented: $showingInfo) {
                 InfoView()
             }
+            .onChange(of: showingSettings) { wasShowing, isShowing in
+                if !isShowing && wasShowing {
+                    loadTrendData()
+                }
+            }
         }
     }
 
     private func loadTrendData() {
-        guard !isLoading else { return }
+        if isLoading { return }
         isLoading = true
         nights = []
         dailyHRV = [:]
         dailyRHR = [:]
-
         healthDataManager.fetchNightsOverLastNDays(
             90, sleepGoalMinutes: goalSleepMinutes
         ) { fetched in

@@ -16,7 +16,6 @@ struct RecoveryView: View {
     @State private var rhrBaseline: Double = 0
     @State private var showingSettings = false
     @State private var showingInfo = false
-
     private let initialLoadCount = 10
     private let batchLoadCount = 7
 
@@ -43,7 +42,6 @@ struct RecoveryView: View {
                         rhrBaseline: rhrBaseline
                     )
                 }
-
                 if showScrollToTop {
                     Button(action: {
                         withAnimation {
@@ -90,6 +88,12 @@ struct RecoveryView: View {
                 loadInitialNights()
             }
         }
+        .onChange(of: showingSettings) { wasShowing, isShowing in
+            if !isShowing && wasShowing {
+                loadBaselines()
+                loadInitialNights()
+            }
+        }
     }
 
     private func loadBaselines() {
@@ -97,52 +101,45 @@ struct RecoveryView: View {
         healthDataManager.fetchNightsOverLastNDays(
             90, sleepGoalMinutes: sleepGoalMinutes
         ) { fetched in
-            DispatchQueue.main.async {
-                let validHRV = fetched.filter { $0.hrv > 0 }.map { $0.hrv }
-                if !validHRV.isEmpty {
-                    hrvBaseline = validHRV.reduce(0, +) / Double(validHRV.count)
-                } else {
-                    hrvBaseline = 50
-                }
-
-                let validRHR = fetched.filter { $0.restingHeartRate > 0 }.map {
-                    $0.restingHeartRate
-                }
-                if !validRHR.isEmpty {
-                    rhrBaseline = validRHR.reduce(0, +) / Double(validRHR.count)
-                } else {
-                    rhrBaseline = 60
-                }
-                isLoading = false
+            let validHRV = fetched.filter { $0.hrv > 0 }.map { $0.hrv }
+            if !validHRV.isEmpty {
+                hrvBaseline = validHRV.reduce(0, +) / Double(validHRV.count)
+            } else {
+                hrvBaseline = 50
             }
+            let validRHR = fetched.filter { $0.restingHeartRate > 0 }.map {
+                $0.restingHeartRate
+            }
+            if !validRHR.isEmpty {
+                rhrBaseline = validRHR.reduce(0, +) / Double(validRHR.count)
+            } else {
+                rhrBaseline = 60
+            }
+            isLoading = false
         }
     }
 
     private func loadInitialNights() {
-        guard nights.isEmpty else { return }
+        if !nights.isEmpty { return }
         isLoading = true
         healthDataManager.fetchNightsOverLastNDays(
             initialLoadCount, sleepGoalMinutes: sleepGoalMinutes
         ) { newNights in
-            DispatchQueue.main.async {
-                nights = newNights
-                isLoading = false
-            }
+            nights = newNights
+            isLoading = false
         }
     }
 
     private func loadMoreNights() {
-        guard !isLoading else { return }
+        if isLoading { return }
         isLoading = true
         let newTotal = nights.count + batchLoadCount
         healthDataManager.fetchNightsOverLastNDays(
             newTotal, sleepGoalMinutes: sleepGoalMinutes
         ) { newBatch in
-            DispatchQueue.main.async {
-                let merged = Set(nights + newBatch)
-                nights = merged.sorted { $0.date > $1.date }
-                isLoading = false
-            }
+            let merged = Set(nights + newBatch)
+            nights = merged.sorted { $0.date > $1.date }
+            isLoading = false
         }
     }
 }
