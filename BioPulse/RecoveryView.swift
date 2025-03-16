@@ -35,7 +35,7 @@ struct RecoveryView: View {
                         .onTapGesture {
                             expandedNight = nil
                         }
-                    ExpandedNightView(nightData: night) {
+                    ExpandedNightView(nightData: night, last30Nights: Array(nights.prefix(30))) {
                         expandedNight = nil
                     }
                     .transition(.scale)

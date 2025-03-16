@@ -83,14 +83,14 @@ public class HealthDataManager: ObservableObject {
         let c = Calendar.current
         let startTime =
             c.date(
-                bySettingHour: 14,
+                bySettingHour: 18,
                 minute: 0,
                 second: 0,
                 of: c.date(byAdding: .day, value: -1, to: date) ?? date
             ) ?? date
         let endTime =
             c.date(
-                bySettingHour: 14,
+                bySettingHour: 18,
                 minute: 0,
                 second: 0,
                 of: date
@@ -126,9 +126,9 @@ public class HealthDataManager: ObservableObject {
                 continue
             }
             let startTime = calendar.date(
-                bySettingHour: 14, minute: 0, second: 0, of: dayStart)!
+                bySettingHour: 18, minute: 0, second: 0, of: dayStart)!
             let endTime = calendar.date(
-                bySettingHour: 14, minute: 0, second: 0, of: nextDay)!
+                bySettingHour: 18, minute: 0, second: 0, of: nextDay)!
             fetchSleepData(startTime: startTime, endTime: endTime) {
                 segments, err in
                 guard let segments = segments, !segments.isEmpty else {
