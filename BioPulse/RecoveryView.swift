@@ -21,7 +21,8 @@ struct RecoveryView: View {
     private let batchLoadCount = 7
 
     private var sleepGoalMinutes: Int {
-        UserDefaults.standard.integer(forKey: "sleepGoal")
+        let val = UserDefaults.standard.integer(forKey: "sleepGoal")
+        return val > 0 ? val : 480
     }
 
     var body: some View {

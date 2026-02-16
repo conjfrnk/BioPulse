@@ -30,26 +30,22 @@ struct DataView: View {
     @StateObject private var healthDataManager = HealthDataManager()
     @State private var showingSettings = false
     @State private var showingInfo = false
-    @State private var stepsData: [Date: Double] = [:]
     @State private var sleepData: [SleepRecord]?
     @State private var isLoadingSleep = false
-    @State private var isLoadingSteps = false
     @State private var selectedDate: Date
-    @State private var startDate: Date
     @State private var totalSleepDebt: TimeInterval = 0
     @State private var dailyDebtDelta: [Date: Double] = [:]
 
     init(date: Date = Date()) {
         _selectedDate = State(initialValue: date)
-        let calendar = Calendar.current
-        let startOfWeek = calendar.date(
-            from: calendar.dateComponents(
-                [.yearForWeekOfYear, .weekOfYear],
-                from: date))!
-        _startDate = State(initialValue: startOfWeek)
     }
 
     @Environment(\.scenePhase) private var scenePhase
+
+    private var sleepGoalMinutes: Int {
+        let val = UserDefaults.standard.integer(forKey: "sleepGoal")
+        return val > 0 ? val : 480
+    }
 
     var body: some View {
         NavigationView {
@@ -140,25 +136,36 @@ struct DataView: View {
     }
 
     private func loadAllData() {
-        loadStepsData()
         loadSleepDataAndDebt()
     }
 
     @MainActor
     private func refreshData() async {
-        loadAllData()
-    }
-
-    private func loadStepsData() {
-        guard !isLoadingSteps else {
-            return
-        }
-        isLoadingSteps = true
-        healthDataManager.fetchWeeklySteps(from: startDate) { data, error in
-            if let data = data {
-                stepsData = data
+        await withCheckedContinuation { continuation in
+            isLoadingSleep = true
+            sleepData = nil
+            healthDataManager.fetchSleepData(for: Date()) { data, error in
+                DispatchQueue.main.async {
+                    if let data = data {
+                        let recs = data.map {
+                            SleepRecord(
+                                stage: $0.stage, startDate: $0.startDate,
+                                endDate: $0.endDate)
+                        }
+                        self.sleepData = recs.sorted { $0.startDate < $1.startDate }
+                    }
+                    self.healthDataManager.fetchNightsOverLastNDays(
+                        30,
+                        sleepGoalMinutes: self.sleepGoalMinutes
+                    ) { fetched in
+                        let result = self.build30dayRolling14Debt(fetched)
+                        self.dailyDebtDelta = result.rolling
+                        self.totalSleepDebt = result.current
+                        self.isLoadingSleep = false
+                        continuation.resume()
+                    }
+                }
             }
-            isLoadingSteps = false
         }
     }
 
@@ -180,8 +187,7 @@ struct DataView: View {
                 }
                 healthDataManager.fetchNightsOverLastNDays(
                     30,
-                    sleepGoalMinutes: UserDefaults.standard.integer(
-                        forKey: "sleepGoal")
+                    sleepGoalMinutes: sleepGoalMinutes
                 ) { fetched in
                     let result = build30dayRolling14Debt(fetched)
                     dailyDebtDelta = result.rolling
@@ -197,8 +203,7 @@ struct DataView: View {
     )
         -> (rolling: [Date: Double], current: TimeInterval)
     {
-        let goalSec =
-            Double(UserDefaults.standard.integer(forKey: "sleepGoal")) * 60.0
+        let goalSec = Double(sleepGoalMinutes) * 60.0
         let sorted = nights.sorted { $0.date < $1.date }
         var dailyRaw: [Date: Double] = [:]
         for n in sorted {
@@ -239,15 +244,4 @@ struct DataView: View {
         }
     }
 
-    private func loadPreviousWeek() {
-        startDate = Calendar.current.date(
-            byAdding: .day, value: -7, to: startDate)!
-        loadStepsData()
-    }
-
-    private func loadNextWeek() {
-        startDate = Calendar.current.date(
-            byAdding: .day, value: 7, to: startDate)!
-        loadStepsData()
-    }
 }

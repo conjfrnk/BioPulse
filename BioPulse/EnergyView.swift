@@ -157,19 +157,24 @@ struct EnergyView: View {
                                 y: bedtimeOffset + 4)
                     }
                 }
-                .navigationBarTitle("Energy", displayMode: .inline)
-                .navigationBarItems(
-                    leading: Button {
-                        showingInfo = true
-                    } label: {
-                        Image(systemName: "info.circle")
-                    },
-                    trailing: Button {
-                        showingSettings = true
-                    } label: {
-                        Image(systemName: "gearshape")
+                .navigationTitle("Energy")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button {
+                            showingInfo = true
+                        } label: {
+                            Image(systemName: "info.circle")
+                        }
                     }
-                )
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button {
+                            showingSettings = true
+                        } label: {
+                            Image(systemName: "gearshape")
+                        }
+                    }
+                }
                 .sheet(isPresented: $showingSettings) {
                     SettingsView()
                 }

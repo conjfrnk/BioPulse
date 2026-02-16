@@ -139,7 +139,31 @@ struct TrendView: View {
 
     @MainActor
     private func refreshTrend() async {
-        loadTrendData()
+        await withCheckedContinuation { continuation in
+            guard !isLoading else {
+                continuation.resume()
+                return
+            }
+            isLoading = true
+            nights = []
+            dailyHRV = [:]
+            dailyRHR = [:]
+            healthDataManager.fetchNightsOverLastNDays(
+                90, sleepGoalMinutes: goalSleepMinutes
+            ) { fetched in
+                let sorted = fetched.sorted { $0.date > $1.date }
+                self.nights = sorted
+                let last30 = Array(sorted.prefix(30))
+                let cal = Calendar.current
+                for n in last30 {
+                    let dayKey = cal.startOfDay(for: n.date)
+                    self.dailyHRV[dayKey] = n.hrv
+                    self.dailyRHR[dayKey] = n.restingHeartRate
+                }
+                self.isLoading = false
+                continuation.resume()
+            }
+        }
     }
 
     private func convertToStages(_ arr: [HealthDataManager.NightData]) -> [(
