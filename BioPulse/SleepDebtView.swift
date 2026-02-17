@@ -37,6 +37,20 @@ struct SleepDebtView: View {
                             )
                             .foregroundStyle(.red)
                         }
+                        ForEach(pts.indices, id: \.self) { i in
+                            let p = pts[i]
+                            AreaMark(
+                                x: .value("Date", p.date),
+                                y: .value("Debt (hrs)", p.debt / 3600.0)
+                            )
+                            .foregroundStyle(
+                                LinearGradient(
+                                    gradient: Gradient(colors: [Color.red.opacity(0.3), Color.red.opacity(0.05)]),
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                        }
                     }
                     .chartXScale(domain: xDomain(pts))
                     .chartXAxis {

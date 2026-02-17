@@ -70,6 +70,9 @@ struct RecoveryView: View {
                 loadBaselines()
                 loadInitialNights()
             }
+            .refreshable {
+                await refreshData()
+            }
         }
         .onChange(of: showingSettings) { wasShowing, isShowing in
             if !isShowing && wasShowing {
@@ -162,6 +165,30 @@ struct RecoveryView: View {
             let merged = Set(nights + newBatch)
             nights = merged.sorted { $0.date > $1.date }
             isLoading = false
+        }
+    }
+
+    @MainActor
+    private func refreshData() async {
+        await withCheckedContinuation { continuation in
+            isLoading = true
+            nights = []
+            healthDataManager.fetchNightsOverLastNDays(
+                90, sleepGoalMinutes: sleepGoalMinutes
+            ) { fetched in
+                let validHRV = fetched.filter { $0.hrv > 0 }.map { $0.hrv }
+                self.hrvBaseline = validHRV.isEmpty ? 50 : validHRV.reduce(0, +) / Double(validHRV.count)
+                let validRHR = fetched.filter { $0.restingHeartRate > 0 }.map { $0.restingHeartRate }
+                self.rhrBaseline = validRHR.isEmpty ? 60 : validRHR.reduce(0, +) / Double(validRHR.count)
+
+                self.healthDataManager.fetchNightsOverLastNDays(
+                    self.initialLoadCount, sleepGoalMinutes: self.sleepGoalMinutes
+                ) { newNights in
+                    self.nights = newNights
+                    self.isLoading = false
+                    continuation.resume()
+                }
+            }
         }
     }
 }

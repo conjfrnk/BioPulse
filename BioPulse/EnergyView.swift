@@ -166,10 +166,17 @@ struct EnergyView: View {
                         }
                     }
                     ToolbarItem(placement: .navigationBarTrailing) {
-                        Button {
-                            showingSettings = true
-                        } label: {
-                            Image(systemName: "gearshape")
+                        HStack(spacing: 12) {
+                            Button {
+                                Task { await refreshData() }
+                            } label: {
+                                Image(systemName: "arrow.clockwise")
+                            }
+                            Button {
+                                showingSettings = true
+                            } label: {
+                                Image(systemName: "gearshape")
+                            }
                         }
                     }
                 }
@@ -202,6 +209,28 @@ struct EnergyView: View {
         userSleepGoal = UserDefaults.standard.integer(forKey: "sleepGoal")
         if userSleepGoal <= 0 {
             userSleepGoal = 480
+        }
+    }
+
+    @MainActor
+    private func refreshData() async {
+        await withCheckedContinuation { continuation in
+            loadUserGoal()
+            isLoading = true
+            nights = []
+            healthDataManager.fetchNightsOverLastNDays(
+                logsDays, sleepGoalMinutes: userSleepGoal
+            ) { fetched in
+                self.nights = fetched
+                self.computeDebtData()
+                self.healthDataManager.fetchAverageHRV(lastNDays: 7) { val in
+                    self.averageHRV = val ?? 60
+                    self.isLoading = false
+                    let mismatch = self.computeCircadianMismatch(fetched)
+                    self.milestoneFractions = self.buildDynamicFractions(mismatch: mismatch)
+                    continuation.resume()
+                }
+            }
         }
     }
 

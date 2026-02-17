@@ -37,10 +37,30 @@ struct HRVTrendChart: View {
                             x: .value("Date", d),
                             y: .value("HRV", filteredHRV[d] ?? 0)
                         )
+                        .foregroundStyle(.green)
+                    }
+                    ForEach(dateKeys, id: \.self) { d in
+                        AreaMark(
+                            x: .value("Date", d),
+                            y: .value("HRV", filteredHRV[d] ?? 0)
+                        )
+                        .foregroundStyle(
+                            LinearGradient(
+                                gradient: Gradient(colors: [Color.green.opacity(0.3), Color.green.opacity(0.05)]),
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
                     }
                     RuleMark(y: .value("Avg HRV", avgHRV))
                         .lineStyle(StrokeStyle(lineWidth: 2, dash: [5]))
                         .foregroundStyle(.gray)
+                        .annotation(position: .top, alignment: .trailing) {
+                            Text("Avg: \(Int(avgHRV)) ms")
+                                .font(.caption2)
+                                .foregroundColor(.gray)
+                                .padding(.horizontal, 4)
+                        }
                 }
                 .chartYScale(domain: yLo...yHi)
                 .chartXScale(domain: earliest...max(earliest, latest))

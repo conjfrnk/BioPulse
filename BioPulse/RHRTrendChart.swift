@@ -37,10 +37,30 @@ struct RHRTrendChart: View {
                             x: .value("Date", d),
                             y: .value("RHR", filteredRHR[d] ?? 0)
                         )
+                        .foregroundStyle(.red)
+                    }
+                    ForEach(dateKeys, id: \.self) { d in
+                        AreaMark(
+                            x: .value("Date", d),
+                            y: .value("RHR", filteredRHR[d] ?? 0)
+                        )
+                        .foregroundStyle(
+                            LinearGradient(
+                                gradient: Gradient(colors: [Color.red.opacity(0.3), Color.red.opacity(0.05)]),
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
                     }
                     RuleMark(y: .value("Avg RHR", avgRHR))
                         .lineStyle(StrokeStyle(lineWidth: 2, dash: [5]))
                         .foregroundStyle(.gray)
+                        .annotation(position: .top, alignment: .trailing) {
+                            Text("Avg: \(Int(avgRHR)) bpm")
+                                .font(.caption2)
+                                .foregroundColor(.gray)
+                                .padding(.horizontal, 4)
+                        }
                 }
                 .chartYScale(domain: yLo...yHi)
                 .chartXScale(domain: earliest...max(earliest, latest))

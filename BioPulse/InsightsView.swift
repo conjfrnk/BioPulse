@@ -13,6 +13,9 @@ struct InsightsView: View {
     @State private var isLoading = false
     @State private var showingSettings = false
     @State private var showingInfo = false
+    @State private var showingExportSheet = false
+    @State private var exportURL: URL?
+    @State private var showingShareSheet = false
     @Environment(\.colorScheme) var colorScheme
 
     private var sleepGoalMinutes: Int {
@@ -36,7 +39,9 @@ struct InsightsView: View {
                     VStack(spacing: 20) {
                         recoveryReadinessCard
                         weeklySummaryCard
+                        historicalComparisonCard
                         trendIndicatorsCard
+                        correlationInsightsCard
                         autonomicBalanceCard
                         sleepEfficiencyCard
                         sleepDebtCard
@@ -45,6 +50,7 @@ struct InsightsView: View {
                         bedtimeConsistencyCard
                         sleepRegularityCard
                         socialJetLagCard
+                        dataActionsCard
                         personalizedTipsCard
                     }
                     .padding()
@@ -97,6 +103,7 @@ struct InsightsView: View {
         ) { fetched in
             nights = fetched.sorted { $0.date > $1.date }
             isLoading = false
+            updateWidgetData()
         }
     }
 
@@ -116,6 +123,18 @@ struct InsightsView: View {
                 continuation.resume()
             }
         }
+    }
+
+    private func updateWidgetData() {
+        SharedDefaults.writeWidgetData(
+            recoveryScore: recoveryReadinessScore,
+            recoveryLabel: recoveryLabel,
+            sleepDebtHours: sleepDebtHours,
+            optimalBedtime: optimalBedtimeWindow?.start,
+            lastHRV: nights.first?.hrv ?? 0,
+            lastRHR: nights.first?.restingHeartRate ?? 0,
+            lastSleepDuration: nights.first?.sleepDuration ?? 0
+        )
     }
 
     // MARK: - Data Slices
@@ -465,6 +484,154 @@ struct InsightsView: View {
             }
             return "Stable autonomic baseline"
         }
+    }
+
+    // MARK: - Correlation Insights
+    // Automated pattern detection from sleep data
+
+    private var correlationInsights: [String] {
+        var insights: [String] = []
+        guard nights.count >= 14 else { return ["Need 14+ nights of data for correlation analysis"] }
+
+        // Correlation: Early bedtime vs HRV
+        let nightsWithHRV = nights.filter { $0.hrv > 0 }
+        if nightsWithHRV.count >= 10 {
+            let sorted = nightsWithHRV.sorted { minuteOfDay(from: $0.sleepStartTime) < minuteOfDay(from: $1.sleepStartTime) }
+            let earlyHalf = Array(sorted.prefix(sorted.count / 2))
+            let lateHalf = Array(sorted.suffix(sorted.count / 2))
+            let earlyAvgHRV = earlyHalf.map { $0.hrv }.reduce(0, +) / Double(earlyHalf.count)
+            let lateAvgHRV = lateHalf.map { $0.hrv }.reduce(0, +) / Double(lateHalf.count)
+            if earlyAvgHRV > lateAvgHRV * 1.05 {
+                let pct = Int((earlyAvgHRV / lateAvgHRV - 1) * 100)
+                let cutoff = minuteOfDay(from: sorted[sorted.count / 2].sleepStartTime)
+                var normalized = cutoff
+                if normalized >= 24 * 60 { normalized -= 24 * 60 }
+                let h = Int(normalized) / 60
+                let m = Int(normalized) % 60
+                insights.append("HRV is \(pct)% higher when you sleep before \(String(format: "%02d:%02d", h, m))")
+            }
+        }
+
+        // Correlation: Sleep duration vs next-day score
+        if nights.count >= 14 {
+            let longNights = nights.filter { $0.sleepDuration >= Double(sleepGoalMinutes) * 60 }
+            let shortNights = nights.filter { $0.sleepDuration < Double(sleepGoalMinutes) * 60 }
+            if longNights.count >= 3 && shortNights.count >= 3 {
+                let longAvgScore = Double(longNights.map { $0.sleepScore }.reduce(0, +)) / Double(longNights.count)
+                let shortAvgScore = Double(shortNights.map { $0.sleepScore }.reduce(0, +)) / Double(shortNights.count)
+                if longAvgScore > shortAvgScore + 3 {
+                    insights.append("Sleep score averages \(Int(longAvgScore - shortAvgScore)) points higher when you meet your sleep goal")
+                }
+            }
+        }
+
+        // Correlation: Consistency vs HRV
+        if nights.count >= 14 {
+            let cal = Calendar.current
+            let weekdays = nights.filter {
+                let wd = cal.component(.weekday, from: $0.sleepStartTime)
+                return wd >= 2 && wd <= 6
+            }
+            let weekends = nights.filter {
+                let wd = cal.component(.weekday, from: $0.sleepStartTime)
+                return wd == 1 || wd == 7
+            }
+            if weekdays.count >= 5 && weekends.count >= 2 {
+                let wdHRV = weekdays.compactMap { $0.hrv > 0 ? $0.hrv : nil }
+                let weHRV = weekends.compactMap { $0.hrv > 0 ? $0.hrv : nil }
+                if !wdHRV.isEmpty && !weHRV.isEmpty {
+                    let wdAvg = wdHRV.reduce(0, +) / Double(wdHRV.count)
+                    let weAvg = weHRV.reduce(0, +) / Double(weHRV.count)
+                    if abs(wdAvg - weAvg) > 3 {
+                        let better = wdAvg > weAvg ? "weekdays" : "weekends"
+                        let diff = Int(abs(wdAvg - weAvg))
+                        insights.append("HRV averages \(diff)ms higher on \(better)")
+                    }
+                }
+            }
+        }
+
+        // Correlation: Awake time vs efficiency
+        let avgAwake = nights.isEmpty ? 0 : nights.reduce(0.0) { $0 + $1.totalAwakeTime } / Double(nights.count)
+        if avgAwake > 30 * 60 {
+            let lowAwakeNights = nights.filter { $0.totalAwakeTime < avgAwake }
+            let highAwakeNights = nights.filter { $0.totalAwakeTime >= avgAwake }
+            if lowAwakeNights.count >= 3 && highAwakeNights.count >= 3 {
+                let lowAvgScore = Double(lowAwakeNights.map { $0.sleepScore }.reduce(0, +)) / Double(lowAwakeNights.count)
+                let highAvgScore = Double(highAwakeNights.map { $0.sleepScore }.reduce(0, +)) / Double(highAwakeNights.count)
+                if lowAvgScore > highAvgScore + 2 {
+                    insights.append("Less nighttime wakefulness correlates with \(Int(lowAvgScore - highAvgScore))-point higher sleep scores")
+                }
+            }
+        }
+
+        if insights.isEmpty {
+            insights.append("Collecting more data to find patterns in your sleep")
+        }
+
+        return Array(insights.prefix(4))
+    }
+
+    // MARK: - Historical Comparison
+
+    private var weekOverWeekComparison: (thisWeek: (avgScore: Double, avgDuration: TimeInterval, avgHRV: Double), lastWeek: (avgScore: Double, avgDuration: TimeInterval, avgHRV: Double))? {
+        guard nights.count >= 14 else { return nil }
+        let thisWeek = Array(nights.prefix(7))
+        let lastWeek = Array(nights.dropFirst(7).prefix(7))
+        guard !thisWeek.isEmpty, !lastWeek.isEmpty else { return nil }
+
+        let tw = (
+            avgScore: Double(thisWeek.reduce(0) { $0 + $1.sleepScore }) / Double(thisWeek.count),
+            avgDuration: thisWeek.reduce(0.0) { $0 + $1.sleepDuration } / Double(thisWeek.count),
+            avgHRV: thisWeek.compactMap { $0.hrv > 0 ? $0.hrv : nil }.reduce(0, +) / max(1, Double(thisWeek.compactMap { $0.hrv > 0 ? $0.hrv : nil }.count))
+        )
+        let lw = (
+            avgScore: Double(lastWeek.reduce(0) { $0 + $1.sleepScore }) / Double(lastWeek.count),
+            avgDuration: lastWeek.reduce(0.0) { $0 + $1.sleepDuration } / Double(lastWeek.count),
+            avgHRV: lastWeek.compactMap { $0.hrv > 0 ? $0.hrv : nil }.reduce(0, +) / max(1, Double(lastWeek.compactMap { $0.hrv > 0 ? $0.hrv : nil }.count))
+        )
+        return (tw, lw)
+    }
+
+    // MARK: - Data Export
+
+    private func exportCSV() -> URL? {
+        var csv = "Date,Sleep Score,HRV (ms),RHR (bpm),Duration (hours),Bedtime,Wake Time,Awake Time (min)\n"
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd"
+        let tf = DateFormatter()
+        tf.dateFormat = "HH:mm"
+
+        for night in nights.sorted(by: { $0.date < $1.date }) {
+            let date = df.string(from: night.date)
+            let duration = String(format: "%.1f", night.sleepDuration / 3600)
+            let bedtime = tf.string(from: night.sleepStartTime)
+            let wake = tf.string(from: night.sleepEndTime)
+            let awake = String(format: "%.0f", night.totalAwakeTime / 60)
+            csv += "\(date),\(night.sleepScore),\(Int(night.hrv)),\(Int(night.restingHeartRate)),\(duration),\(bedtime),\(wake),\(awake)\n"
+        }
+
+        let tmpURL = FileManager.default.temporaryDirectory.appendingPathComponent("BioPulse_Sleep_Data.csv")
+        try? csv.write(to: tmpURL, atomically: true, encoding: .utf8)
+        return tmpURL
+    }
+
+    private func weeklySummaryText() -> String {
+        let avgDur = formatDuration(avgSleepDuration7)
+        let score = Int(avgSleepScore7)
+        let eff = String(format: "%.0f", avgSleepEfficiency7)
+        let recovery = recoveryReadinessScore
+
+        return """
+        BioPulse Weekly Summary
+        ───────────────────
+        Recovery Score: \(recovery)/100 (\(recoveryLabel))
+        Avg Sleep: \(avgDur)
+        Avg Score: \(score)
+        Efficiency: \(eff)%
+        Sleep Debt: \(String(format: "%.1f", sleepDebtHours))h
+        Chronotype: \(chronotype)
+        """
     }
 
     // MARK: - Existing Computed Data
@@ -1251,6 +1418,193 @@ struct InsightsView: View {
         .background(cardBackground)
     }
 
+    private var correlationInsightsCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label {
+                Text("Pattern Detection")
+                    .font(.headline)
+            } icon: {
+                Image(systemName: "cpu.fill")
+                    .foregroundColor(.cyan)
+            }
+
+            Text("Correlations found in your sleep data")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            Divider()
+
+            ForEach(Array(correlationInsights.enumerated()), id: \.offset) { _, insight in
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "lightbulb.fill")
+                        .font(.caption)
+                        .foregroundColor(.yellow)
+                    Text(insight)
+                        .font(.subheadline)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.vertical, 2)
+            }
+        }
+        .padding()
+        .background(cardBackground)
+    }
+
+    private var historicalComparisonCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label {
+                Text("Week over Week")
+                    .font(.headline)
+            } icon: {
+                Image(systemName: "arrow.left.arrow.right")
+                    .foregroundColor(.blue)
+            }
+
+            Divider()
+
+            if let comparison = weekOverWeekComparison {
+                HStack(spacing: 0) {
+                    VStack(spacing: 4) {
+                        Text("This Week")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("\(Int(comparison.thisWeek.avgScore))")
+                            .font(.system(.title3, design: .rounded))
+                            .bold()
+                        Text("score")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+
+                    VStack(spacing: 4) {
+                        Text("")
+                            .font(.caption)
+                        let diff = comparison.thisWeek.avgScore - comparison.lastWeek.avgScore
+                        Image(systemName: diff >= 0 ? "arrow.up.right" : "arrow.down.right")
+                            .font(.title3)
+                            .foregroundColor(diff >= 0 ? .green : .red)
+                        Text(String(format: "%+.0f", diff))
+                            .font(.caption)
+                            .foregroundColor(diff >= 0 ? .green : .red)
+                    }
+                    .frame(maxWidth: .infinity)
+
+                    VStack(spacing: 4) {
+                        Text("Last Week")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("\(Int(comparison.lastWeek.avgScore))")
+                            .font(.system(.title3, design: .rounded))
+                            .bold()
+                        Text("score")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+
+                HStack(spacing: 0) {
+                    weekComparisonItem(
+                        label: "Duration",
+                        current: formatDuration(comparison.thisWeek.avgDuration),
+                        change: (comparison.thisWeek.avgDuration - comparison.lastWeek.avgDuration) / comparison.lastWeek.avgDuration * 100,
+                        higherIsBetter: true
+                    )
+                    weekComparisonItem(
+                        label: "HRV",
+                        current: "\(Int(comparison.thisWeek.avgHRV))ms",
+                        change: comparison.lastWeek.avgHRV > 0 ? (comparison.thisWeek.avgHRV - comparison.lastWeek.avgHRV) / comparison.lastWeek.avgHRV * 100 : 0,
+                        higherIsBetter: true
+                    )
+                }
+            } else {
+                Text("Need 14+ nights for week-over-week comparison")
+                    .foregroundColor(.secondary)
+                    .font(.subheadline)
+            }
+        }
+        .padding()
+        .background(cardBackground)
+    }
+
+    private func weekComparisonItem(label: String, current: String, change: Double, higherIsBetter: Bool) -> some View {
+        let isBetter = higherIsBetter ? change >= 0 : change <= 0
+        return VStack(spacing: 4) {
+            Text(label)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            Text(current)
+                .font(.system(.body, design: .rounded))
+                .bold()
+            Text(String(format: "%+.1f%%", change))
+                .font(.caption)
+                .foregroundColor(isBetter ? .green : .red)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var dataActionsCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label {
+                Text("Data & Sharing")
+                    .font(.headline)
+            } icon: {
+                Image(systemName: "square.and.arrow.up")
+                    .foregroundColor(.blue)
+            }
+
+            Divider()
+
+            HStack(spacing: 16) {
+                Button {
+                    exportURL = exportCSV()
+                    if exportURL != nil {
+                        showingExportSheet = true
+                    }
+                } label: {
+                    VStack(spacing: 6) {
+                        Image(systemName: "doc.text")
+                            .font(.title2)
+                        Text("Export CSV")
+                            .font(.caption)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color.blue.opacity(0.1))
+                    .cornerRadius(12)
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    showingShareSheet = true
+                } label: {
+                    VStack(spacing: 6) {
+                        Image(systemName: "chart.bar.doc.horizontal")
+                            .font(.title2)
+                        Text("Share Summary")
+                            .font(.caption)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color.purple.opacity(0.1))
+                    .cornerRadius(12)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding()
+        .background(cardBackground)
+        .sheet(isPresented: $showingExportSheet) {
+            if let url = exportURL {
+                ShareSheet(items: [url])
+            }
+        }
+        .sheet(isPresented: $showingShareSheet) {
+            ShareSheet(items: [weeklySummaryText()])
+        }
+    }
+
     // MARK: - Helpers
 
     private var averageBedtimeString: String {
@@ -1294,4 +1648,14 @@ struct InsightsView: View {
         if minutes < 60 { return "Moderately consistent" }
         return "Highly variable schedule"
     }
+}
+
+struct ShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }

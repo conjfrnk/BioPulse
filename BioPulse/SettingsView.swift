@@ -11,6 +11,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selectedSleepGoal: Int = 8 * 60
     @State private var selectedWakeTime: Date = Calendar.current.date(bySettingHour: 7, minute: 0, second: 0, of: Date()) ?? Date()
+    @State private var bedtimeNotificationsEnabled: Bool = UserDefaults.standard.bool(forKey: "bedtimeNotificationsEnabled")
     @State private var sleepScrollOffset: CGFloat = 0
     @State private var wakeScrollOffset: CGFloat = 0
     @State private var lastSleepDragValue: CGFloat = 0
@@ -126,6 +127,34 @@ struct SettingsView: View {
                     .frame(height: 100)
                 }
                 
+                // Bedtime Reminder Section
+                VStack(spacing: 16) {
+                    Toggle(isOn: $bedtimeNotificationsEnabled) {
+                        Label {
+                            Text("Bedtime Reminder")
+                                .font(.headline)
+                        } icon: {
+                            Image(systemName: "bell.fill")
+                                .foregroundColor(.purple)
+                        }
+                    }
+                    .onChange(of: bedtimeNotificationsEnabled) { _, newValue in
+                        UserDefaults.standard.set(newValue, forKey: "bedtimeNotificationsEnabled")
+                        if newValue {
+                            NotificationManager.shared.requestAuthorization()
+                        } else {
+                            NotificationManager.shared.cancelBedtimeReminder()
+                        }
+                    }
+
+                    if bedtimeNotificationsEnabled {
+                        Text("You'll be reminded 30 minutes before your optimal bedtime")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.horizontal, 24)
+
                 Spacer()
             }
             .toolbar {
