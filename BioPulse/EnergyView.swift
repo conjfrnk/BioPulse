@@ -50,6 +50,64 @@ struct MilestoneTileView: View {
     }
 }
 
+private struct CurrentTimeOverlay: View {
+    let layout: [LayoutMilestone]
+    let dayStart: Date
+    let dayEnd: Date
+    let topMargin: CGFloat
+    let width: CGFloat
+
+    @State private var currentTime = Date()
+
+    var body: some View {
+        Group {
+            if let nowOffset = offsetForTime(currentTime) {
+                Rectangle()
+                    .fill(Color.red.opacity(0.6))
+                    .frame(width: width, height: 2)
+                    .offset(y: nowOffset - 1)
+                let currentTimeString = timeString(currentTime)
+                Text(currentTimeString)
+                    .font(.caption)
+                    .foregroundColor(.red.opacity(0.6))
+                    .offset(x: 8, y: nowOffset + 4)
+            }
+        }
+        .onReceive(
+            Timer.publish(every: 1, on: .main, in: .common)
+                .autoconnect()
+        ) { _ in
+            currentTime = Date()
+        }
+    }
+
+    private func offsetForTime(_ date: Date) -> CGFloat? {
+        if date <= dayStart { return topMargin }
+        if date >= dayEnd, let last = layout.last {
+            return last.offset + last.height
+        }
+        let total = dayEnd.timeIntervalSince(dayStart)
+        let dt = date.timeIntervalSince(dayStart)
+        if dt < 0 || total <= 0 { return nil }
+        var e: TimeInterval = 0
+        for lm in layout {
+            let msDur = lm.milestone.end.timeIntervalSince(lm.milestone.start)
+            if dt >= e && dt <= e + msDur {
+                let f = (dt - e) / msDur
+                return lm.offset + CGFloat(f) * lm.height
+            }
+            e += msDur
+        }
+        return layout.last.map { $0.offset + $0.height }
+    }
+
+    private func timeString(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f.string(from: date)
+    }
+}
+
 struct EnergyView: View {
     @StateObject private var healthDataManager = HealthDataManager()
     @State private var nights: [HealthDataManager.NightData] = []
@@ -83,7 +141,6 @@ struct EnergyView: View {
     private let sidePadding: CGFloat = 16
     private let topMargin: CGFloat = 20
     private let bottomMargin: CGFloat = 20
-    @State private var currentTime = Date()
 
     var body: some View {
         NavigationStack {
@@ -119,19 +176,13 @@ struct EnergyView: View {
                         .offset(y: lm.offset)
                     }
 
-                    if let nowOffset = offsetForTime(
-                        currentTime, layout: layout)
-                    {
-                        Rectangle()
-                            .fill(Color.red.opacity(0.6))
-                            .frame(width: geo.size.width, height: 2)
-                            .offset(y: nowOffset - 1)
-                        let currentTimeString = timeString(currentTime)
-                        Text(currentTimeString)
-                            .font(.caption)
-                            .foregroundColor(.red.opacity(0.6))
-                            .offset(x: 8, y: nowOffset + 4)
-                    }
+                    CurrentTimeOverlay(
+                        layout: layout,
+                        dayStart: dayStart,
+                        dayEnd: dayEnd,
+                        topMargin: topMargin,
+                        width: geo.size.width
+                    )
 
                     if let bedtimeOffset = offsetForGoalBedtime(
                         layout: layout, width: geo.size.width)
@@ -189,12 +240,6 @@ struct EnergyView: View {
                 .onAppear {
                     loadUserGoal()
                     loadNightData()
-                }
-                .onReceive(
-                    Timer.publish(every: 1, on: .main, in: .common)
-                        .autoconnect()
-                ) { _ in
-                    currentTime = Date()
                 }
             }
         }

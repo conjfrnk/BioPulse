@@ -12,6 +12,12 @@ struct SettingsView: View {
     @State private var selectedSleepGoal: Int = 8 * 60
     @State private var selectedWakeTime: Date = Calendar.current.date(bySettingHour: 7, minute: 0, second: 0, of: Date()) ?? Date()
     @State private var bedtimeNotificationsEnabled: Bool = UserDefaults.standard.bool(forKey: "bedtimeNotificationsEnabled")
+    @State private var restDays: Set<Int> = {
+        if let stored = UserDefaults.standard.array(forKey: "restDays") as? [Int] {
+            return Set(stored)
+        }
+        return [1, 7] // Sunday, Saturday
+    }()
     @State private var sleepScrollOffset: CGFloat = 0
     @State private var wakeScrollOffset: CGFloat = 0
     @State private var lastSleepDragValue: CGFloat = 0
@@ -36,6 +42,7 @@ struct SettingsView: View {
     
     var body: some View {
         NavigationStack {
+            ScrollView {
             VStack(spacing: 40) {
                 Text("Settings")
                     .font(.largeTitle)
@@ -155,8 +162,52 @@ struct SettingsView: View {
                 }
                 .padding(.horizontal, 24)
 
+                // Rest Days Section
+                VStack(spacing: 12) {
+                    Text("Rest Days")
+                        .font(.headline)
+                    Text("Rest days are used to calculate social jet lag. Select the days you typically sleep in.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 8)
+
+                    let weekdays: [(name: String, value: Int)] = [
+                        ("Mon", 2), ("Tue", 3), ("Wed", 4), ("Thu", 5),
+                        ("Fri", 6), ("Sat", 7), ("Sun", 1),
+                    ]
+                    HStack(spacing: 8) {
+                        ForEach(weekdays, id: \.value) { day in
+                            let isSelected = restDays.contains(day.value)
+                            Button {
+                                if isSelected {
+                                    restDays.remove(day.value)
+                                } else {
+                                    restDays.insert(day.value)
+                                }
+                                UserDefaults.standard.set(Array(restDays), forKey: "restDays")
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            } label: {
+                                Text(day.name)
+                                    .font(.caption)
+                                    .fontWeight(isSelected ? .bold : .regular)
+                                    .frame(width: 40, height: 40)
+                                    .background(isSelected ? Color.blue.opacity(0.2) : Color.clear)
+                                    .cornerRadius(8)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .stroke(isSelected ? Color.blue : Color.gray.opacity(0.3), lineWidth: 1)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .padding(.horizontal, 24)
+
                 Spacer()
             }
+            } // ScrollView
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: {
@@ -255,24 +306,27 @@ struct SettingsView: View {
             storedWakeTime = Date(timeIntervalSince1970: storedWakeTimeInterval)
         }
         
-        if let initialIndex = findClosestWakeTimeIndex(for: storedWakeTime) {
-            selectedWakeTime = wakeTimeOptions[initialIndex]
-            let targetOffset = -CGFloat(initialIndex) * totalItemWidth
-            wakeScrollOffset = targetOffset
-            lastWakeDragValue = wakeScrollOffset
-        }
+        let initialIndex = findClosestWakeTimeIndex(for: storedWakeTime)
+        selectedWakeTime = wakeTimeOptions[initialIndex]
+        let targetOffset = -CGFloat(initialIndex) * totalItemWidth
+        wakeScrollOffset = targetOffset
+        lastWakeDragValue = wakeScrollOffset
     }
     
-    private func findClosestWakeTimeIndex(for date: Date) -> Int? {
+    private func findClosestWakeTimeIndex(for date: Date) -> Int {
         let calendar = Calendar.current
         let components = calendar.dateComponents([.hour, .minute], from: date)
-        let minutes = components.hour! * 60 + components.minute!
-        
-        return wakeTimeOptions.firstIndex { option in
+        let minutes = (components.hour ?? 7) * 60 + (components.minute ?? 0)
+
+        if let exact = wakeTimeOptions.firstIndex(where: { option in
             let optionComponents = calendar.dateComponents([.hour, .minute], from: option)
-            let optionMinutes = optionComponents.hour! * 60 + optionComponents.minute!
+            let optionMinutes = (optionComponents.hour ?? 0) * 60 + (optionComponents.minute ?? 0)
             return optionMinutes >= minutes
+        }) {
+            return exact
         }
+        // Fall back to middle of array if no match found
+        return wakeTimeOptions.count / 2
     }
     
     private func formattedSleepGoal(minutes: Int) -> String {

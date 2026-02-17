@@ -54,8 +54,10 @@ struct DataView: View {
                     VStack(alignment: .leading, spacing: 20) {
                         VStack(alignment: .leading) {
                             if isLoadingSleep {
-                                ProgressView()
-                                    .frame(maxWidth: .infinity, maxHeight: 200)
+                                VStack(spacing: 12) {
+                                    ProgressView("Loading sleep data...")
+                                }
+                                .frame(maxWidth: .infinity, maxHeight: 200)
                             } else if let sleepData = sleepData,
                                 !sleepData.isEmpty
                             {
@@ -68,12 +70,14 @@ struct DataView: View {
 
                                 HStack {
                                     Spacer()
+                                    let debtHours = totalSleepDebt / 3600.0
+                                    let cappedDebt = min(totalSleepDebt, 20.0 * 3600.0)
+                                    let isCapped = debtHours > 20.0
                                     Text(
-                                        "Sleep Debt: \(formatTimeInterval(totalSleepDebt))"
+                                        "Sleep Debt: \(formatTimeInterval(cappedDebt))\(isCapped ? " (max)" : "")"
                                     )
                                     .font(.subheadline)
-                                    .foregroundColor(
-                                        totalSleepDebt > 0 ? .red : .green)
+                                    .foregroundColor(sleepDebtColor(hours: min(debtHours, 20.0)))
                                     Spacer()
                                 }
                                 .padding(.top, 2)
@@ -82,12 +86,19 @@ struct DataView: View {
                                     .padding(.top, 8)
 
                             } else {
-                                Text("No sleep data available")
-                                    .foregroundColor(.secondary)
-                                    .frame(
-                                        maxWidth: .infinity, alignment: .center
-                                    )
-                                    .padding()
+                                VStack(spacing: 12) {
+                                    Image(systemName: "bed.double")
+                                        .font(.system(size: 40))
+                                        .foregroundColor(.secondary)
+                                    Text("No sleep data available yet. Wear your Apple Watch to bed and ensure HealthKit permissions are granted in Settings.")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                        .multilineTextAlignment(.center)
+                                }
+                                .frame(
+                                    maxWidth: .infinity, alignment: .center
+                                )
+                                .padding()
                             }
                         }
                     }
@@ -153,16 +164,20 @@ struct DataView: View {
                                 stage: $0.stage, startDate: $0.startDate,
                                 endDate: $0.endDate)
                         }
-                        self.sleepData = recs.sorted { $0.startDate < $1.startDate }
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            self.sleepData = recs.sorted { $0.startDate < $1.startDate }
+                        }
                     }
                     self.healthDataManager.fetchNightsOverLastNDays(
                         30,
                         sleepGoalMinutes: self.sleepGoalMinutes
                     ) { fetched in
                         let result = self.build30dayRolling14Debt(fetched)
-                        self.dailyDebtDelta = result.rolling
-                        self.totalSleepDebt = result.current
-                        self.isLoadingSleep = false
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            self.dailyDebtDelta = result.rolling
+                            self.totalSleepDebt = result.current
+                            self.isLoadingSleep = false
+                        }
                         continuation.resume()
                     }
                 }
@@ -184,16 +199,20 @@ struct DataView: View {
                             stage: $0.stage, startDate: $0.startDate,
                             endDate: $0.endDate)
                     }
-                    sleepData = recs.sorted { $0.startDate < $1.startDate }
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        sleepData = recs.sorted { $0.startDate < $1.startDate }
+                    }
                 }
                 healthDataManager.fetchNightsOverLastNDays(
                     30,
                     sleepGoalMinutes: sleepGoalMinutes
                 ) { fetched in
                     let result = build30dayRolling14Debt(fetched)
-                    dailyDebtDelta = result.rolling
-                    totalSleepDebt = result.current
-                    isLoadingSleep = false
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        dailyDebtDelta = result.rolling
+                        totalSleepDebt = result.current
+                        isLoadingSleep = false
+                    }
                 }
             }
         }
@@ -232,6 +251,20 @@ struct DataView: View {
             return (rolling14, curr)
         } else {
             return ([:], 0)
+        }
+    }
+
+    private func sleepDebtColor(hours: Double) -> Color {
+        if hours <= 0 {
+            return .green
+        } else if hours <= 2 {
+            return .green
+        } else if hours <= 5 {
+            return .yellow
+        } else if hours <= 10 {
+            return .orange
+        } else {
+            return .red
         }
     }
 

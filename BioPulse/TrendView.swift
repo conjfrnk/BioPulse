@@ -36,9 +36,17 @@ struct TrendView: View {
                         ProgressView("Loading data...")
                             .frame(maxWidth: .infinity)
                     } else if nights.isEmpty {
-                        Text("No sleep data available")
-                            .frame(maxWidth: .infinity, alignment: .center)
-                            .padding()
+                        VStack(spacing: 12) {
+                            Image(systemName: "moon.zzz")
+                                .font(.system(size: 40))
+                                .foregroundColor(.secondary)
+                            Text("No sleep data available yet. Wear your Apple Watch to bed and ensure HealthKit permissions are granted in Settings.")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding()
                     } else {
                         SleepTrendView(
                             sleepData: convertToStages(nights),
@@ -125,15 +133,21 @@ struct TrendView: View {
             90, sleepGoalMinutes: goalSleepMinutes
         ) { fetched in
             let sorted = fetched.sorted { $0.date > $1.date }
-            nights = sorted
             let last30 = Array(sorted.prefix(30))
             let cal = Calendar.current
+            var newHRV: [Date: Double] = [:]
+            var newRHR: [Date: Double] = [:]
             for n in last30 {
                 let dayKey = cal.startOfDay(for: n.date)
-                dailyHRV[dayKey] = n.hrv
-                dailyRHR[dayKey] = n.restingHeartRate
+                newHRV[dayKey] = n.hrv
+                newRHR[dayKey] = n.restingHeartRate
             }
-            isLoading = false
+            withAnimation(.easeInOut(duration: 0.3)) {
+                nights = sorted
+                dailyHRV = newHRV
+                dailyRHR = newRHR
+                isLoading = false
+            }
         }
     }
 
@@ -152,15 +166,21 @@ struct TrendView: View {
                 90, sleepGoalMinutes: goalSleepMinutes
             ) { fetched in
                 let sorted = fetched.sorted { $0.date > $1.date }
-                self.nights = sorted
                 let last30 = Array(sorted.prefix(30))
                 let cal = Calendar.current
+                var newHRV: [Date: Double] = [:]
+                var newRHR: [Date: Double] = [:]
                 for n in last30 {
                     let dayKey = cal.startOfDay(for: n.date)
-                    self.dailyHRV[dayKey] = n.hrv
-                    self.dailyRHR[dayKey] = n.restingHeartRate
+                    newHRV[dayKey] = n.hrv
+                    newRHR[dayKey] = n.restingHeartRate
                 }
-                self.isLoading = false
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    self.nights = sorted
+                    self.dailyHRV = newHRV
+                    self.dailyRHR = newRHR
+                    self.isLoading = false
+                }
                 continuation.resume()
             }
         }

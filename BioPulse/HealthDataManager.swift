@@ -8,6 +8,7 @@
 import HealthKit
 import SwiftUI
 
+@MainActor
 public class HealthDataManager: ObservableObject {
     private let healthStore = HKHealthStore()
 
@@ -19,7 +20,11 @@ public class HealthDataManager: ObservableObject {
     private let stepsType = HKObjectType.quantityType(
         forIdentifier: .stepCount)!
 
-    public struct NightData: Identifiable, Hashable {
+    private var cachedNights: [NightData]?
+    private var cacheTimestamp: Date?
+    private var cachedDayRange: Int = 0
+
+    public struct NightData: Identifiable, Hashable, Sendable {
         public var id: Date { date }
 
         public let date: Date
@@ -30,6 +35,9 @@ public class HealthDataManager: ObservableObject {
         public let sleepStartTime: Date
         public let sleepEndTime: Date
         public let totalAwakeTime: TimeInterval
+        public let deepSleepDuration: TimeInterval
+        public let remSleepDuration: TimeInterval
+        public let coreSleepDuration: TimeInterval
 
         public func hash(into hasher: inout Hasher) {
             hasher.combine(date)
@@ -47,7 +55,10 @@ public class HealthDataManager: ObservableObject {
             sleepDuration: TimeInterval,
             sleepStartTime: Date,
             sleepEndTime: Date,
-            totalAwakeTime: TimeInterval
+            totalAwakeTime: TimeInterval,
+            deepSleepDuration: TimeInterval = 0,
+            remSleepDuration: TimeInterval = 0,
+            coreSleepDuration: TimeInterval = 0
         ) {
             self.date = date
             self.sleepScore = sleepScore
@@ -57,10 +68,19 @@ public class HealthDataManager: ObservableObject {
             self.sleepStartTime = sleepStartTime
             self.sleepEndTime = sleepEndTime
             self.totalAwakeTime = totalAwakeTime
+            self.deepSleepDuration = deepSleepDuration
+            self.remSleepDuration = remSleepDuration
+            self.coreSleepDuration = coreSleepDuration
         }
     }
 
-    public func requestAuthorization(
+    public func invalidateCache() {
+        cachedNights = nil
+        cacheTimestamp = nil
+        cachedDayRange = 0
+    }
+
+    nonisolated public func requestAuthorization(
         completion: @escaping (Bool, Error?) -> Void
     ) {
         let toRead: Set<HKObjectType> = [
@@ -105,7 +125,17 @@ public class HealthDataManager: ObservableObject {
         completion: @escaping ([NightData]) -> Void
     ) {
         guard days > 0 else {
-            DispatchQueue.main.async { completion([]) }
+            completion([])
+            return
+        }
+
+        if let cached = cachedNights,
+            let timestamp = cacheTimestamp,
+            Date().timeIntervalSince(timestamp) < 300,
+            days <= cachedDayRange
+        {
+            let sliced = Array(cached.prefix(days))
+            completion(sliced)
             return
         }
 
@@ -154,6 +184,24 @@ public class HealthDataManager: ObservableObject {
                     .reduce(0.0) {
                         $0 + $1.endDate.timeIntervalSince($1.startDate)
                     }
+                let deepDuration =
+                    sortedSegs
+                    .filter { $0.stage == "Deep" }
+                    .reduce(0.0) {
+                        $0 + $1.endDate.timeIntervalSince($1.startDate)
+                    }
+                let remDuration =
+                    sortedSegs
+                    .filter { $0.stage == "REM" }
+                    .reduce(0.0) {
+                        $0 + $1.endDate.timeIntervalSince($1.startDate)
+                    }
+                let coreDuration =
+                    sortedSegs
+                    .filter { $0.stage == "Core" }
+                    .reduce(0.0) {
+                        $0 + $1.endDate.timeIntervalSince($1.startDate)
+                    }
                 let actualStart = earliest.startDate
                 let actualEnd = latest.endDate
 
@@ -177,7 +225,10 @@ public class HealthDataManager: ObservableObject {
                             sleepDuration: totalNonAwake,
                             sleepStartTime: actualStart,
                             sleepEndTime: actualEnd,
-                            totalAwakeTime: totalAwake
+                            totalAwakeTime: totalAwake,
+                            deepSleepDuration: deepDuration,
+                            remSleepDuration: remDuration,
+                            coreSleepDuration: coreDuration
                         )
                         allNights.append(night)
                         group.leave()
@@ -232,17 +283,23 @@ public class HealthDataManager: ObservableObject {
                     sleepDuration: target.sleepDuration,
                     sleepStartTime: target.sleepStartTime,
                     sleepEndTime: target.sleepEndTime,
-                    totalAwakeTime: target.totalAwakeTime
+                    totalAwakeTime: target.totalAwakeTime,
+                    deepSleepDuration: target.deepSleepDuration,
+                    remSleepDuration: target.remSleepDuration,
+                    coreSleepDuration: target.coreSleepDuration
                 )
                 updated.append(revised)
             }
 
             let final = updated.sorted { $0.date > $1.date }
+            self.cachedNights = final
+            self.cacheTimestamp = Date()
+            self.cachedDayRange = days
             completion(final)
         }
     }
 
-    private func fetchSleepData(
+    nonisolated private func fetchSleepData(
         startTime: Date,
         endTime: Date,
         completion: @escaping (
@@ -305,7 +362,7 @@ public class HealthDataManager: ObservableObject {
         healthStore.execute(q)
     }
 
-    private func mergeSleepSegments(
+    nonisolated private func mergeSleepSegments(
         _ raw: [HKCategorySample]
     ) -> [(stage: String, startDate: Date, endDate: Date)] {
         let sorted = raw.sorted { $0.startDate < $1.startDate }
@@ -345,7 +402,7 @@ public class HealthDataManager: ObservableObject {
         return result
     }
 
-    private func fetchHRVDuringSleep(
+    nonisolated private func fetchHRVDuringSleep(
         sleepStart: Date,
         sleepEnd: Date,
         completion: @escaping (Double?, Error?) -> Void
@@ -372,7 +429,7 @@ public class HealthDataManager: ObservableObject {
         healthStore.execute(statsQ)
     }
 
-    private func fetchHeartRateDuringSleep(
+    nonisolated private func fetchHeartRateDuringSleep(
         sleepStart: Date,
         sleepEnd: Date,
         completion: @escaping (Double?, Error?) -> Void
@@ -437,6 +494,10 @@ public class HealthDataManager: ObservableObject {
             sleepData
             .filter { $0.stage != "Awake" && $0.stage != "InBed" }
             .reduce(0.0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }
+        let totalAwake =
+            sleepData
+            .filter { $0.stage == "Awake" }
+            .reduce(0.0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }
         let byStage = Dictionary(grouping: sleepData, by: { $0.stage })
             .mapValues { segs in
                 segs.reduce(0.0) {
@@ -471,6 +532,14 @@ public class HealthDataManager: ObservableObject {
         } else if rhr == nil {
             score -= 5
         }
+
+        let totalTime = totalSlept + totalAwake
+        if totalTime > 0 {
+            let efficiency = totalSlept / totalTime
+            let efficiencyPenalty = Int((1.0 - efficiency) * 15.0)
+            score -= efficiencyPenalty
+        }
+
         return max(0, min(100, score))
     }
 
@@ -517,7 +586,7 @@ public class HealthDataManager: ObservableObject {
         return max(0, min(100, score))
     }
 
-    public func fetchWeeklySteps(
+    nonisolated public func fetchWeeklySteps(
         from startDate: Date,
         completion: @escaping ([Date: Double]?, Error?) -> Void
     ) {

@@ -84,7 +84,14 @@ struct RecoveryView: View {
 
     private var contentView: some View {
         ZStack(alignment: .bottomTrailing) {
-            if nights.isEmpty && !isLoading {
+            if nights.isEmpty && isLoading {
+                VStack {
+                    Spacer()
+                    ProgressView("Loading sleep data...")
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if nights.isEmpty && !isLoading {
                 VStack {
                     Text("No data available")
                         .foregroundColor(.secondary)
@@ -127,20 +134,22 @@ struct RecoveryView: View {
             90, sleepGoalMinutes: sleepGoalMinutes
         ) { fetched in
             let validHRV = fetched.filter { $0.hrv > 0 }.map { $0.hrv }
-            if !validHRV.isEmpty {
-                hrvBaseline = validHRV.reduce(0, +) / Double(validHRV.count)
-            } else {
-                hrvBaseline = 50
-            }
             let validRHR = fetched.filter { $0.restingHeartRate > 0 }.map {
                 $0.restingHeartRate
             }
-            if !validRHR.isEmpty {
-                rhrBaseline = validRHR.reduce(0, +) / Double(validRHR.count)
-            } else {
-                rhrBaseline = 60
+            withAnimation(.easeInOut(duration: 0.3)) {
+                if !validHRV.isEmpty {
+                    hrvBaseline = validHRV.reduce(0, +) / Double(validHRV.count)
+                } else {
+                    hrvBaseline = 50
+                }
+                if !validRHR.isEmpty {
+                    rhrBaseline = validRHR.reduce(0, +) / Double(validRHR.count)
+                } else {
+                    rhrBaseline = 60
+                }
+                isLoading = false
             }
-            isLoading = false
         }
     }
 
@@ -150,8 +159,10 @@ struct RecoveryView: View {
         healthDataManager.fetchNightsOverLastNDays(
             initialLoadCount, sleepGoalMinutes: sleepGoalMinutes
         ) { newNights in
-            nights = newNights
-            isLoading = false
+            withAnimation(.easeInOut(duration: 0.3)) {
+                nights = newNights
+                isLoading = false
+            }
         }
     }
 
@@ -162,9 +173,11 @@ struct RecoveryView: View {
         healthDataManager.fetchNightsOverLastNDays(
             newTotal, sleepGoalMinutes: sleepGoalMinutes
         ) { newBatch in
-            let merged = Set(nights + newBatch)
-            nights = merged.sorted { $0.date > $1.date }
-            isLoading = false
+            withAnimation(.easeInOut(duration: 0.3)) {
+                let merged = Set(nights + newBatch)
+                nights = merged.sorted { $0.date > $1.date }
+                isLoading = false
+            }
         }
     }
 
@@ -184,8 +197,10 @@ struct RecoveryView: View {
                 self.healthDataManager.fetchNightsOverLastNDays(
                     self.initialLoadCount, sleepGoalMinutes: self.sleepGoalMinutes
                 ) { newNights in
-                    self.nights = newNights
-                    self.isLoading = false
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        self.nights = newNights
+                        self.isLoading = false
+                    }
                     continuation.resume()
                 }
             }
@@ -263,6 +278,7 @@ struct NightsList: View {
                 )
                 .padding(.horizontal)
                 .id(night.id)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
                 .onTapGesture {
                     onNightTap(night)
                 }

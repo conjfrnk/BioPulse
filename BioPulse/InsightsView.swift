@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct InsightsView: View {
     @StateObject private var healthDataManager = HealthDataManager()
@@ -16,6 +17,7 @@ struct InsightsView: View {
     @State private var showingExportSheet = false
     @State private var exportURL: URL?
     @State private var showingShareSheet = false
+    @State private var showingReportSheet = false
     @Environment(\.colorScheme) var colorScheme
 
     private var sleepGoalMinutes: Int {
@@ -44,6 +46,7 @@ struct InsightsView: View {
                         correlationInsightsCard
                         autonomicBalanceCard
                         sleepEfficiencyCard
+                        sleepArchitectureCard
                         sleepDebtCard
                         chronotypeCard
                         optimalSleepWindowCard
@@ -101,8 +104,10 @@ struct InsightsView: View {
         healthDataManager.fetchNightsOverLastNDays(
             30, sleepGoalMinutes: sleepGoalMinutes
         ) { fetched in
-            nights = fetched.sorted { $0.date > $1.date }
-            isLoading = false
+            withAnimation(.easeInOut(duration: 0.3)) {
+                nights = fetched.sorted { $0.date > $1.date }
+                isLoading = false
+            }
             updateWidgetData()
         }
     }
@@ -118,8 +123,10 @@ struct InsightsView: View {
             healthDataManager.fetchNightsOverLastNDays(
                 30, sleepGoalMinutes: sleepGoalMinutes
             ) { fetched in
-                self.nights = fetched.sorted { $0.date > $1.date }
-                self.isLoading = false
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    self.nights = fetched.sorted { $0.date > $1.date }
+                    self.isLoading = false
+                }
                 continuation.resume()
             }
         }
@@ -207,6 +214,41 @@ struct InsightsView: View {
         if score >= 67 { return .green }
         if score >= 34 { return .yellow }
         return .red
+    }
+
+    // Recovery confidence based on 7-day rolling SD
+    // Plews et al. (2013) - higher HRV CV indicates maladaptation
+    private var recoveryConfidence: (label: String, sd: Double, color: Color) {
+        let scores = last7Nights.map { night -> Double in
+            // Calculate per-night recovery score inline
+            let hrvVals = nights.compactMap { $0.hrv > 0 ? $0.hrv : nil }
+            let rhrVals = nights.compactMap { $0.restingHeartRate > 0 ? $0.restingHeartRate : nil }
+            let hrvBaseline = hrvVals.isEmpty ? 50.0 : hrvVals.reduce(0, +) / Double(hrvVals.count)
+            let rhrBaseline = rhrVals.isEmpty ? 60.0 : rhrVals.reduce(0, +) / Double(rhrVals.count)
+
+            let hrvScore: Double
+            if hrvBaseline > 0 && night.hrv > 0 {
+                hrvScore = min(100, max(0, (night.hrv / hrvBaseline) * 100))
+            } else { hrvScore = 50 }
+
+            let rhrScore: Double
+            if rhrBaseline > 0 && night.restingHeartRate > 0 {
+                rhrScore = min(100, max(0, (rhrBaseline / night.restingHeartRate) * 100))
+            } else { rhrScore = 50 }
+
+            let goalSec = Double(sleepGoalMinutes) * 60
+            let durationScore = goalSec > 0 ? min(1.0, night.sleepDuration / goalSec) * 100 : 50
+
+            let composite = hrvScore * 0.35 + rhrScore * 0.25 + durationScore * 0.25 + 50.0 * 0.15
+            return max(0, min(100, composite))
+        }
+        guard scores.count >= 2 else { return ("N/A", 0, .secondary) }
+        let mean = scores.reduce(0, +) / Double(scores.count)
+        let variance = scores.map { pow($0 - mean, 2) }.reduce(0, +) / Double(scores.count)
+        let sd = sqrt(variance)
+        if sd < 8 { return ("Stable", sd, .green) }
+        if sd < 15 { return ("Moderate", sd, .yellow) }
+        return ("Volatile", sd, .red)
     }
 
     // MARK: - Autonomic Balance
@@ -321,27 +363,28 @@ struct InsightsView: View {
 
     private var socialJetLagMinutes: Double {
         let cal = Calendar.current
-        var weekdayMidpoints: [Double] = []
-        var weekendMidpoints: [Double] = []
+        let restDays = UserDefaults.standard.array(forKey: "restDays") as? [Int] ?? [1, 7]
+        var workDayMidpoints: [Double] = []
+        var restDayMidpoints: [Double] = []
 
         for night in last14Nights {
-            let weekday = cal.component(.weekday, from: night.sleepStartTime)
-            let isWeekend = weekday == 1 || weekday == 6 || weekday == 7
+            let wakeDay = cal.component(.weekday, from: night.sleepEndTime)
+            let isRestDay = restDays.contains(wakeDay)
             let start = minuteOfDay(from: night.sleepStartTime)
             let durationMin = night.sleepDuration / 60
             let midpoint = start + durationMin / 2
 
-            if isWeekend {
-                weekendMidpoints.append(midpoint)
+            if isRestDay {
+                restDayMidpoints.append(midpoint)
             } else {
-                weekdayMidpoints.append(midpoint)
+                workDayMidpoints.append(midpoint)
             }
         }
 
-        guard !weekdayMidpoints.isEmpty, !weekendMidpoints.isEmpty else { return 0 }
-        let weekdayAvg = weekdayMidpoints.reduce(0, +) / Double(weekdayMidpoints.count)
-        let weekendAvg = weekendMidpoints.reduce(0, +) / Double(weekendMidpoints.count)
-        return abs(weekendAvg - weekdayAvg)
+        guard !workDayMidpoints.isEmpty, !restDayMidpoints.isEmpty else { return 0 }
+        let workDayAvg = workDayMidpoints.reduce(0, +) / Double(workDayMidpoints.count)
+        let restDayAvg = restDayMidpoints.reduce(0, +) / Double(restDayMidpoints.count)
+        return abs(restDayAvg - workDayAvg)
     }
 
     private var socialJetLagLabel: String {
@@ -681,7 +724,8 @@ struct InsightsView: View {
         let totalDeficit = last14Nights.reduce(0.0) { acc, night in
             acc + max(0, goalSeconds - night.sleepDuration)
         }
-        return totalDeficit / 3600.0
+        // Capped at 20h per sleep debt recovery research (Kitamura et al. 2016)
+        return min(20.0, totalDeficit / 3600.0)
     }
 
     // MARK: - Trend Helpers
@@ -883,6 +927,24 @@ struct InsightsView: View {
                         .bold()
                 }
                 .accessibilityLabel("Recovery score \(recoveryReadinessScore) out of 100, \(recoveryLabel)")
+            }
+
+            let confidence = recoveryConfidence
+            if confidence.sd > 0 {
+                Divider()
+                HStack(spacing: 6) {
+                    Image(systemName: "waveform.path")
+                        .font(.caption)
+                        .foregroundColor(confidence.color)
+                    Text("\(confidence.label) (\u{00B1}\(String(format: "%.0f", confidence.sd)))")
+                        .font(.caption)
+                        .bold()
+                        .foregroundColor(confidence.color)
+                    Spacer()
+                    Text("Based on 7-day recovery variability")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
             }
         }
         .padding()
@@ -1122,6 +1184,11 @@ struct InsightsView: View {
                     Text(debtDescription)
                         .font(.caption)
                         .foregroundColor(.secondary)
+                    if sleepDebtHours >= 20.0 {
+                        Text("Capped at 20h per sleep debt recovery research (Kitamura et al. 2016)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
                 }
                 Spacer()
                 ZStack {
@@ -1129,7 +1196,7 @@ struct InsightsView: View {
                         .stroke(Color.gray.opacity(0.2), lineWidth: 6)
                         .frame(width: 50, height: 50)
                     Circle()
-                        .trim(from: 0, to: min(1.0, CGFloat(sleepDebtHours) / 5.0))
+                        .trim(from: 0, to: min(1.0, CGFloat(sleepDebtHours) / 20.0))
                         .stroke(debtColor, style: StrokeStyle(lineWidth: 6, lineCap: .round))
                         .frame(width: 50, height: 50)
                         .rotationEffect(.degrees(-90))
@@ -1248,7 +1315,7 @@ struct InsightsView: View {
                     .foregroundColor(.pink)
             }
 
-            Text("Weekend vs weekday sleep midpoint shift")
+            Text("Rest day vs work day sleep midpoint shift")
                 .font(.caption)
                 .foregroundColor(.secondary)
 
@@ -1556,8 +1623,9 @@ struct InsightsView: View {
 
             Divider()
 
-            HStack(spacing: 16) {
+            HStack(spacing: 12) {
                 Button {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     exportURL = exportCSV()
                     if exportURL != nil {
                         showingExportSheet = true
@@ -1577,6 +1645,7 @@ struct InsightsView: View {
                 .buttonStyle(.plain)
 
                 Button {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     showingShareSheet = true
                 } label: {
                     VStack(spacing: 6) {
@@ -1588,6 +1657,23 @@ struct InsightsView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
                     .background(Color.purple.opacity(0.1))
+                    .cornerRadius(12)
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    showingReportSheet = true
+                } label: {
+                    VStack(spacing: 6) {
+                        Image(systemName: "doc.richtext")
+                            .font(.title2)
+                        Text("Share Report")
+                            .font(.caption)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color.green.opacity(0.1))
                     .cornerRadius(12)
                 }
                 .buttonStyle(.plain)
@@ -1603,6 +1689,214 @@ struct InsightsView: View {
         .sheet(isPresented: $showingShareSheet) {
             ShareSheet(items: [weeklySummaryText()])
         }
+        .sheet(isPresented: $showingReportSheet) {
+            ShareSheet(items: [generateReport()])
+        }
+    }
+
+    // MARK: - Sleep Architecture Card
+
+    private var sleepArchitectureCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label {
+                Text("Sleep Architecture")
+                    .font(.headline)
+            } icon: {
+                Image(systemName: "chart.bar.fill")
+                    .foregroundColor(.indigo)
+            }
+
+            Text("Ranges based on Ohayon et al. (2004), Carskadon & Dement (2011)")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+
+            Divider()
+
+            if let lastNight = nights.first,
+               lastNight.sleepDuration > 0,
+               let stages = sleepStagePercentages(for: lastNight),
+               (stages.deep + stages.rem + stages.core) > 0 {
+
+                sleepStageBar(deepPct: stages.deep, remPct: stages.rem, corePct: stages.core)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    sleepStageRow(label: "Deep", pct: stages.deep, minPct: 13, maxPct: 23, color: .indigo)
+                    sleepStageRow(label: "REM", pct: stages.rem, minPct: 20, maxPct: 25, color: .cyan)
+                    sleepStageRow(label: "Light", pct: stages.core, minPct: 50, maxPct: 60, color: .blue.opacity(0.5))
+                }
+
+                Text("Deep: 13-23% | REM: 20-25% | Light: 50-60%")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Sleep stage data unavailable")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    Text("Sleep stage breakdown requires Apple Watch sleep tracking with detailed stage data (Deep, REM, Core).")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+        .padding()
+        .background(cardBackground)
+    }
+
+    private func sleepStageBar(deepPct: Double, remPct: Double, corePct: Double) -> some View {
+        GeometryReader { geometry in
+            HStack(spacing: 1) {
+                Rectangle()
+                    .fill(Color.indigo)
+                    .frame(width: geometry.size.width * CGFloat(deepPct / 100))
+                Rectangle()
+                    .fill(Color.cyan)
+                    .frame(width: geometry.size.width * CGFloat(remPct / 100))
+                Rectangle()
+                    .fill(Color.blue.opacity(0.4))
+                    .frame(width: geometry.size.width * CGFloat(corePct / 100))
+            }
+            .cornerRadius(4)
+        }
+        .frame(height: 20)
+    }
+
+    private func sleepStageRow(label: String, pct: Double, minPct: Double, maxPct: Double, color: Color) -> some View {
+        let status: (text: String, color: Color) = {
+            if pct >= minPct && pct <= maxPct {
+                return ("In range", .green)
+            } else if pct >= minPct - 5 && pct <= maxPct + 5 {
+                return ("Slightly outside", .yellow)
+            } else {
+                return ("Outside range", .red)
+            }
+        }()
+
+        return HStack {
+            Circle()
+                .fill(color)
+                .frame(width: 8, height: 8)
+            Text(label)
+                .font(.caption)
+                .frame(width: 40, alignment: .leading)
+            Text(String(format: "%.0f%%", pct))
+                .font(.caption)
+                .bold()
+                .frame(width: 36, alignment: .trailing)
+            Text(status.text)
+                .font(.caption2)
+                .foregroundColor(status.color)
+            Spacer()
+        }
+    }
+
+    // MARK: - Report Generation
+
+    private func generateReport() -> String {
+        let df = DateFormatter()
+        df.dateFormat = "MMM d, yyyy"
+        let today = df.string(from: Date())
+
+        var report = """
+        ====================================
+         BioPulse Sleep & Recovery Report
+         Generated: \(today)
+        ====================================
+
+        --- RECOVERY SCORE ---
+        Score: \(recoveryReadinessScore)/100 (\(recoveryLabel))
+        """
+
+        let confidence = recoveryConfidence
+        if confidence.sd > 0 {
+            report += "\nConfidence: \(confidence.label) (\u{00B1}\(String(format: "%.0f", confidence.sd)))"
+        }
+
+        report += """
+
+        Components: HRV (35%) + RHR (25%) + Duration (25%) + Debt (15%)
+
+        --- SLEEP ARCHITECTURE ---
+        """
+
+        if let lastNight = nights.first,
+           let stages = sleepStagePercentages(for: lastNight) {
+            report += """
+
+            Deep: \(String(format: "%.0f%%", stages.deep)) (target: 13-23%)
+            REM: \(String(format: "%.0f%%", stages.rem)) (target: 20-25%)
+            Light: \(String(format: "%.0f%%", stages.core)) (target: 50-60%)
+            """
+        } else {
+            report += "\nSleep stage data not available"
+        }
+
+        // HRV/RHR trends
+        let hrvVals7 = last7Nights.compactMap { $0.hrv > 0 ? $0.hrv : nil }
+        let rhrVals7 = last7Nights.compactMap { $0.restingHeartRate > 0 ? $0.restingHeartRate : nil }
+        let hrvAvg7 = hrvVals7.isEmpty ? 0.0 : hrvVals7.reduce(0, +) / Double(hrvVals7.count)
+        let rhrAvg7 = rhrVals7.isEmpty ? 0.0 : rhrVals7.reduce(0, +) / Double(rhrVals7.count)
+
+        let hrvVals30 = nights.compactMap { $0.hrv > 0 ? $0.hrv : nil }
+        let rhrVals30 = nights.compactMap { $0.restingHeartRate > 0 ? $0.restingHeartRate : nil }
+        let hrvAvg30 = hrvVals30.isEmpty ? 0.0 : hrvVals30.reduce(0, +) / Double(hrvVals30.count)
+        let rhrAvg30 = rhrVals30.isEmpty ? 0.0 : rhrVals30.reduce(0, +) / Double(rhrVals30.count)
+
+        report += """
+
+
+        --- HRV & RHR TRENDS ---
+        HRV  7-day avg: \(String(format: "%.0f", hrvAvg7)) ms (\(hrvTrend.label))
+        HRV 30-day avg: \(String(format: "%.0f", hrvAvg30)) ms
+        RHR  7-day avg: \(String(format: "%.0f", rhrAvg7)) bpm (\(rhrTrend.label))
+        RHR 30-day avg: \(String(format: "%.0f", rhrAvg30)) bpm
+
+        --- SLEEP DEBT ---
+        Current debt: \(String(format: "%.1f", sleepDebtHours)) hours (\(debtDescription))
+        Goal: \(sleepGoalMinutes / 60)h \(sleepGoalMinutes % 60)m per night
+
+        --- WEEKLY SUMMARY ---
+        Avg Duration: \(formatDuration(avgSleepDuration7))
+        Avg Score: \(Int(avgSleepScore7))
+        Efficiency: \(String(format: "%.0f%%", avgSleepEfficiency7)) (\(sleepEfficiencyLabel))
+        Chronotype: \(chronotype)
+        Social Jet Lag: \(Int(socialJetLagMinutes)) min (\(socialJetLagLabel))
+        Sleep Regularity: \(Int(sleepRegularityScore))/100 (\(regularityLabel))
+
+        --- RECOMMENDATIONS ---
+        """
+
+        for (i, tip) in tips.enumerated() {
+            report += "\n\(i + 1). \(tip)"
+        }
+
+        report += """
+
+
+        ====================================
+        Report generated by BioPulse
+        ====================================
+        """
+
+        return report
+    }
+
+    // MARK: - Sleep Stage Helpers
+
+    private func sleepStagePercentages(for night: HealthDataManager.NightData) -> (deep: Double, rem: Double, core: Double)? {
+        // Use Mirror to check if NightData has sleep stage fields
+        let mirror = Mirror(reflecting: night)
+        var deep: TimeInterval?
+        var rem: TimeInterval?
+        var core: TimeInterval?
+        for child in mirror.children {
+            if child.label == "deepSleepDuration", let val = child.value as? TimeInterval, val > 0 { deep = val }
+            if child.label == "remSleepDuration", let val = child.value as? TimeInterval, val > 0 { rem = val }
+            if child.label == "coreSleepDuration", let val = child.value as? TimeInterval, val > 0 { core = val }
+        }
+        guard let d = deep, let r = rem, let c = core, night.sleepDuration > 0 else { return nil }
+        let total = night.sleepDuration
+        return ((d / total) * 100, (r / total) * 100, (c / total) * 100)
     }
 
     // MARK: - Helpers
