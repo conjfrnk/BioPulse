@@ -10,6 +10,7 @@ import SwiftUI
 
 struct RHRTrendChart: View {
     let dailyRHR: [Date: Double]
+    var selectedPeriod: Int = 30
 
     var body: some View {
         let filteredRHR = dailyRHR.filter { $0.value != 0 }
@@ -19,23 +20,52 @@ struct RHRTrendChart: View {
             let dateKeys = filteredRHR.keys.sorted()
             let minVal = filteredRHR.values.min() ?? 50
             let maxVal = filteredRHR.values.max() ?? 90
-            let yLo = max(40, minVal - 5)
+            let yLo = max(35, minVal - 5)
             let yHi = maxVal + 5
             let avgRHR =
                 filteredRHR.values.reduce(0, +) / Double(filteredRHR.count)
             let earliest = dateKeys.first ?? Date()
             let latest = dateKeys.last ?? Date()
+            let movingAvg = computeMovingAverage(data: filteredRHR, window: 7)
 
             VStack(alignment: .leading) {
-                Text("Resting HR (Last 30 Days)")
-                    .font(.headline)
-                    .padding(.horizontal, 16)
-
                 Chart {
+                    // Healthy range band (green): 50-70 bpm
+                    RectangleMark(
+                        xStart: .value("Start", earliest),
+                        xEnd: .value("End", latest),
+                        yStart: .value("Lo", max(yLo, 50)),
+                        yEnd: .value("Hi", min(yHi, 70))
+                    )
+                    .foregroundStyle(.green.opacity(0.1))
+
+                    // Below healthy band (yellow): 40-50 bpm
+                    if yLo < 50 {
+                        RectangleMark(
+                            xStart: .value("Start", earliest),
+                            xEnd: .value("End", latest),
+                            yStart: .value("Lo", max(yLo, 40)),
+                            yEnd: .value("Hi", 50)
+                        )
+                        .foregroundStyle(.yellow.opacity(0.1))
+                    }
+
+                    // Above healthy band (yellow): 70-80 bpm
+                    if yHi > 70 {
+                        RectangleMark(
+                            xStart: .value("Start", earliest),
+                            xEnd: .value("End", latest),
+                            yStart: .value("Lo", 70),
+                            yEnd: .value("Hi", min(yHi, 80))
+                        )
+                        .foregroundStyle(.yellow.opacity(0.1))
+                    }
+
                     ForEach(dateKeys, id: \.self) { d in
                         LineMark(
                             x: .value("Date", d),
-                            y: .value("RHR", filteredRHR[d] ?? 0)
+                            y: .value("RHR", filteredRHR[d] ?? 0),
+                            series: .value("Series", "Daily")
                         )
                         .foregroundStyle(.red)
                     }
@@ -52,6 +82,19 @@ struct RHRTrendChart: View {
                             )
                         )
                     }
+
+                    // 7-day moving average
+                    let maKeys = movingAvg.keys.sorted()
+                    ForEach(maKeys, id: \.self) { d in
+                        LineMark(
+                            x: .value("Date", d),
+                            y: .value("RHR", movingAvg[d] ?? 0),
+                            series: .value("Series", "7d Avg")
+                        )
+                        .foregroundStyle(Color.red.opacity(0.7))
+                        .lineStyle(StrokeStyle(lineWidth: 2))
+                    }
+
                     RuleMark(y: .value("Avg RHR", avgRHR))
                         .lineStyle(StrokeStyle(lineWidth: 2, dash: [5]))
                         .foregroundStyle(.gray)
@@ -65,17 +108,9 @@ struct RHRTrendChart: View {
                 .chartYScale(domain: yLo...yHi)
                 .chartXScale(domain: earliest...max(earliest, latest))
                 .chartXAxis {
-                    let now = Date()
-                    let d7 = Calendar.current.date(
-                        byAdding: .day, value: -7, to: now)!
-                    let d14 = Calendar.current.date(
-                        byAdding: .day, value: -14, to: now)!
-                    let d21 = Calendar.current.date(
-                        byAdding: .day, value: -21, to: now)!
-                    let d28 = Calendar.current.date(
-                        byAdding: .day, value: -28, to: now)!
-                    AxisMarks(values: [d28, d21, d14, d7]) { val in
+                    AxisMarks(values: .automatic(desiredCount: 4)) { val in
                         if let dd = val.as(Date.self) {
+                            let now = Date()
                             let daysAgo = abs(
                                 Calendar.current.dateComponents(
                                     [.day], from: dd, to: now
@@ -85,9 +120,22 @@ struct RHRTrendChart: View {
                     }
                 }
                 .frame(height: 200)
+                .clipped()
                 .padding(.horizontal, 16)
                 .padding(.bottom, 30)
             }
         }
+    }
+
+    private func computeMovingAverage(data: [Date: Double], window: Int) -> [Date: Double] {
+        let sorted = data.sorted { $0.key < $1.key }
+        var result: [Date: Double] = [:]
+        for i in 0..<sorted.count {
+            let start = max(0, i - window + 1)
+            let slice = sorted[start...i]
+            let avg = slice.map(\.value).reduce(0, +) / Double(slice.count)
+            result[sorted[i].key] = avg
+        }
+        return result
     }
 }

@@ -23,10 +23,6 @@ struct SleepTrendView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Sleep (Last 8 nights)")
-                .font(.headline)
-                .padding(.horizontal)
-
             if trendData.isEmpty {
                 Text("No trend data available")
                     .foregroundColor(.secondary)
@@ -347,7 +343,6 @@ struct SleepTrendView: View {
             )
         }
         .sorted { $0.date > $1.date }
-        .prefix(8)
         .reversed()
         return Array(pts)
     }

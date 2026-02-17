@@ -144,7 +144,7 @@ struct TrendView: View {
                                         .foregroundColor(.green)
                                 }
 
-                                Text("30-day nightly HRV trend")
+                                Text("Nightly HRV trend (\(selectedPeriod)d)")
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
 
@@ -185,7 +185,7 @@ struct TrendView: View {
                                         .foregroundColor(.red)
                                 }
 
-                                Text("30-day nightly resting heart rate trend")
+                                Text("Nightly resting heart rate trend (\(selectedPeriod)d)")
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
 
@@ -406,7 +406,7 @@ struct TrendView: View {
                 endDate: $0.sleepEndTime
             )
         }
-        return Array(mapped.prefix(8).reversed())
+        return Array(mapped.reversed())
     }
 
     private func fetchGoalWakeTime() -> Date {
