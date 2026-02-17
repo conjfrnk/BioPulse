@@ -6,7 +6,20 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		B32619C22F4400C700014FFA /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B32619C12F4400C700014FFA /* WidgetKit.framework */; };
+		B32619C42F4400C700014FFA /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B32619C32F4400C700014FFA /* SwiftUI.framework */; };
+		B32619D52F4400C800014FFA /* BioPulseWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B32619BF2F4400C700014FFA /* BioPulseWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
+		B32619D32F4400C800014FFA /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B3C8FB5A2CE5AE3C00D5A989 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B32619BE2F4400C700014FFA;
+			remoteInfo = BioPulseWidgetExtension;
+		};
 		B3C8FB732CE5AE3D00D5A989 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = B3C8FB5A2CE5AE3C00D5A989 /* Project object */;
@@ -23,13 +36,49 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		B32619D62F4400C800014FFA /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				B32619D52F4400C800014FFA /* BioPulseWidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		B32619BF2F4400C700014FFA /* BioPulseWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = BioPulseWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		B32619C12F4400C700014FFA /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		B32619C32F4400C700014FFA /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		B3C8FB622CE5AE3C00D5A989 /* BioPulse.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BioPulse.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B3C8FB722CE5AE3D00D5A989 /* BioPulseTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BioPulseTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B3C8FB7C2CE5AE3D00D5A989 /* BioPulseUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BioPulseUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		B32619D92F4400C800014FFA /* Exceptions for "BioPulseWidget" folder in "BioPulseWidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				BioPulseWidgetExtension.entitlements,
+				Info.plist,
+			);
+			target = B32619BE2F4400C700014FFA /* BioPulseWidgetExtension */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		B32619C52F4400C700014FFA /* BioPulseWidget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				B32619D92F4400C800014FFA /* Exceptions for "BioPulseWidget" folder in "BioPulseWidgetExtension" target */,
+			);
+			path = BioPulseWidget;
+			sourceTree = "<group>";
+		};
 		B3C8FB642CE5AE3C00D5A989 /* BioPulse */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = BioPulse;
@@ -48,6 +97,15 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		B32619BC2F4400C700014FFA /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B32619C42F4400C700014FFA /* SwiftUI.framework in Frameworks */,
+				B32619C22F4400C700014FFA /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B3C8FB5F2CE5AE3C00D5A989 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -72,12 +130,23 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		B32619C02F4400C700014FFA /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				B32619C12F4400C700014FFA /* WidgetKit.framework */,
+				B32619C32F4400C700014FFA /* SwiftUI.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		B3C8FB592CE5AE3C00D5A989 = {
 			isa = PBXGroup;
 			children = (
 				B3C8FB642CE5AE3C00D5A989 /* BioPulse */,
 				B3C8FB752CE5AE3D00D5A989 /* BioPulseTests */,
 				B3C8FB7F2CE5AE3D00D5A989 /* BioPulseUITests */,
+				B32619C52F4400C700014FFA /* BioPulseWidget */,
+				B32619C02F4400C700014FFA /* Frameworks */,
 				B3C8FB632CE5AE3C00D5A989 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -88,6 +157,7 @@
 				B3C8FB622CE5AE3C00D5A989 /* BioPulse.app */,
 				B3C8FB722CE5AE3D00D5A989 /* BioPulseTests.xctest */,
 				B3C8FB7C2CE5AE3D00D5A989 /* BioPulseUITests.xctest */,
+				B32619BF2F4400C700014FFA /* BioPulseWidgetExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -95,6 +165,28 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		B32619BE2F4400C700014FFA /* BioPulseWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B32619DA2F4400C800014FFA /* Build configuration list for PBXNativeTarget "BioPulseWidgetExtension" */;
+			buildPhases = (
+				B32619BB2F4400C700014FFA /* Sources */,
+				B32619BC2F4400C700014FFA /* Frameworks */,
+				B32619BD2F4400C700014FFA /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				B32619C52F4400C700014FFA /* BioPulseWidget */,
+			);
+			name = BioPulseWidgetExtension;
+			packageProductDependencies = (
+			);
+			productName = BioPulseWidgetExtension;
+			productReference = B32619BF2F4400C700014FFA /* BioPulseWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		B3C8FB612CE5AE3C00D5A989 /* BioPulse */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = B3C8FB862CE5AE3D00D5A989 /* Build configuration list for PBXNativeTarget "BioPulse" */;
@@ -102,10 +194,12 @@
 				B3C8FB5E2CE5AE3C00D5A989 /* Sources */,
 				B3C8FB5F2CE5AE3C00D5A989 /* Frameworks */,
 				B3C8FB602CE5AE3C00D5A989 /* Resources */,
+				B32619D62F4400C800014FFA /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				B32619D42F4400C800014FFA /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				B3C8FB642CE5AE3C00D5A989 /* BioPulse */,
@@ -170,9 +264,12 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 1610;
+				LastSwiftUpdateCheck = 2620;
 				LastUpgradeCheck = 1610;
 				TargetAttributes = {
+					B32619BE2F4400C700014FFA = {
+						CreatedOnToolsVersion = 26.2;
+					};
 					B3C8FB612CE5AE3C00D5A989 = {
 						CreatedOnToolsVersion = 16.1;
 					};
@@ -203,11 +300,19 @@
 				B3C8FB612CE5AE3C00D5A989 /* BioPulse */,
 				B3C8FB712CE5AE3D00D5A989 /* BioPulseTests */,
 				B3C8FB7B2CE5AE3D00D5A989 /* BioPulseUITests */,
+				B32619BE2F4400C700014FFA /* BioPulseWidgetExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		B32619BD2F4400C700014FFA /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B3C8FB602CE5AE3C00D5A989 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -232,6 +337,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		B32619BB2F4400C700014FFA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B3C8FB5E2CE5AE3C00D5A989 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -256,6 +368,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		B32619D42F4400C800014FFA /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B32619BE2F4400C700014FFA /* BioPulseWidgetExtension */;
+			targetProxy = B32619D32F4400C800014FFA /* PBXContainerItemProxy */;
+		};
 		B3C8FB742CE5AE3D00D5A989 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = B3C8FB612CE5AE3C00D5A989 /* BioPulse */;
@@ -269,6 +386,64 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		B32619D72F4400C800014FFA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = BioPulseWidget/BioPulseWidgetExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 4;
+				DEVELOPMENT_TEAM = F2B95Q4CT8;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = BioPulseWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = BioPulseWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.conjfrnk.BioPulse.BioPulseWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		B32619D82F4400C800014FFA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = BioPulseWidget/BioPulseWidgetExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 4;
+				DEVELOPMENT_TEAM = F2B95Q4CT8;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = BioPulseWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = BioPulseWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.conjfrnk.BioPulse.BioPulseWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 		B3C8FB842CE5AE3D00D5A989 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -321,7 +496,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.1;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
@@ -378,7 +553,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.1;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
@@ -464,7 +639,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = F2B95Q4CT8;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.1;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.conjfrnk.BioPulseTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -483,7 +658,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = F2B95Q4CT8;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.1;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.conjfrnk.BioPulseTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -531,6 +706,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		B32619DA2F4400C800014FFA /* Build configuration list for PBXNativeTarget "BioPulseWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B32619D72F4400C800014FFA /* Debug */,
+				B32619D82F4400C800014FFA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		B3C8FB5D2CE5AE3C00D5A989 /* Build configuration list for PBXProject "BioPulse" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

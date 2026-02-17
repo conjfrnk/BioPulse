@@ -8,6 +8,19 @@
 import WidgetKit
 import SwiftUI
 
+// MARK: - Shared Keys
+
+private enum WidgetKeys {
+    static let suiteName = "group.com.conjfrnk.BioPulse"
+    static let recoveryScore = "widget_recoveryScore"
+    static let recoveryLabel = "widget_recoveryLabel"
+    static let sleepDebtHours = "widget_sleepDebtHours"
+    static let optimalBedtime = "widget_optimalBedtime"
+    static let lastHRV = "widget_lastHRV"
+    static let lastRHR = "widget_lastRHR"
+    static let lastSleepDuration = "widget_lastSleepDuration"
+}
+
 // MARK: - Timeline Provider
 
 struct BioPulseProvider: TimelineProvider {
@@ -36,16 +49,16 @@ struct BioPulseProvider: TimelineProvider {
     }
 
     private func currentEntry() -> BioPulseEntry {
-        let defaults = UserDefaults(suiteName: "group.com.conjfrnk.BioPulse") ?? .standard
+        let defaults = UserDefaults(suiteName: WidgetKeys.suiteName) ?? .standard
         return BioPulseEntry(
             date: Date(),
-            recoveryScore: defaults.integer(forKey: "widget_recoveryScore"),
-            recoveryLabel: defaults.string(forKey: "widget_recoveryLabel") ?? "—",
-            sleepDebtHours: defaults.double(forKey: "widget_sleepDebtHours"),
-            optimalBedtime: defaults.string(forKey: "widget_optimalBedtime"),
-            lastHRV: defaults.double(forKey: "widget_lastHRV"),
-            lastRHR: defaults.double(forKey: "widget_lastRHR"),
-            lastSleepDuration: defaults.double(forKey: "widget_lastSleepDuration")
+            recoveryScore: defaults.integer(forKey: WidgetKeys.recoveryScore),
+            recoveryLabel: defaults.string(forKey: WidgetKeys.recoveryLabel) ?? "—",
+            sleepDebtHours: defaults.double(forKey: WidgetKeys.sleepDebtHours),
+            optimalBedtime: defaults.string(forKey: WidgetKeys.optimalBedtime),
+            lastHRV: defaults.double(forKey: WidgetKeys.lastHRV),
+            lastRHR: defaults.double(forKey: WidgetKeys.lastRHR),
+            lastSleepDuration: defaults.double(forKey: WidgetKeys.lastSleepDuration)
         )
     }
 }
@@ -63,7 +76,7 @@ struct BioPulseEntry: TimelineEntry {
     let lastSleepDuration: TimeInterval
 }
 
-// MARK: - Recovery Widget
+// MARK: - Recovery Widget View
 
 struct RecoveryWidgetView: View {
     var entry: BioPulseEntry
@@ -112,7 +125,6 @@ struct RecoveryWidgetView: View {
 
     private var mediumRecoveryView: some View {
         HStack(spacing: 16) {
-            // Recovery score
             VStack(spacing: 6) {
                 ZStack {
                     Circle()
@@ -232,15 +244,6 @@ struct RecoveryWidget: Widget {
             .accessoryRectangular,
             .accessoryInline
         ])
-    }
-}
-
-// MARK: - Widget Bundle
-
-@main
-struct BioPulseWidgetBundle: WidgetBundle {
-    var body: some Widget {
-        RecoveryWidget()
     }
 }
 
