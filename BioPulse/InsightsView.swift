@@ -21,7 +21,7 @@ struct InsightsView: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 if isLoading {
                     ProgressView("Analyzing your sleep data...")
@@ -715,6 +715,7 @@ struct InsightsView: View {
                         .font(.system(.title2, design: .rounded))
                         .bold()
                 }
+                .accessibilityLabel("Recovery score \(recoveryReadinessScore) out of 100, \(recoveryLabel)")
             }
         }
         .padding()
@@ -817,6 +818,8 @@ struct InsightsView: View {
                 .font(.caption2)
                 .foregroundColor(direction.color)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title) trend: \(direction.label)")
     }
 
     private var autonomicBalanceCard: some View {

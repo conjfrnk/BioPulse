@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @Environment(\.presentationMode) var presentationMode
+    @Environment(\.dismiss) private var dismiss
     @State private var selectedSleepGoal: Int = 8 * 60
     @State private var selectedWakeTime: Date = Calendar.current.date(bySettingHour: 7, minute: 0, second: 0, of: Date()) ?? Date()
     @State private var sleepScrollOffset: CGFloat = 0
@@ -34,7 +34,7 @@ struct SettingsView: View {
     private var totalItemWidth: CGFloat { itemWidth + itemSpacing }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 40) {
                 Text("Settings")
                     .font(.largeTitle)
@@ -131,7 +131,7 @@ struct SettingsView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: {
-                        presentationMode.wrappedValue.dismiss()
+                        dismiss()
                     }) {
                         Image(systemName: "xmark")
                             .foregroundColor(.blue)
@@ -172,13 +172,14 @@ struct SettingsView: View {
                         selectedSleepGoal = sleepGoals[centerIndex]
                         UserDefaults.standard.set(selectedSleepGoal, forKey: "sleepGoal")
                     }
-                    
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+
                     withAnimation(.interpolatingSpring(stiffness: 100, damping: 15)) {
                         let targetOffset = -CGFloat(centerIndex) * totalItemWidth
                         sleepScrollOffset = targetOffset
                         lastSleepDragValue = sleepScrollOffset
                     }
-                    
+
                 case .wake:
                     let predictedEndOffset = lastWakeDragValue + totalTranslation
                     var centerIndex = Int(round(-predictedEndOffset / totalItemWidth))
@@ -188,7 +189,8 @@ struct SettingsView: View {
                         selectedWakeTime = wakeTimeOptions[centerIndex]
                         UserDefaults.standard.set(selectedWakeTime.timeIntervalSince1970, forKey: "goalWakeTime")
                     }
-                    
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+
                     withAnimation(.interpolatingSpring(stiffness: 100, damping: 15)) {
                         let targetOffset = -CGFloat(centerIndex) * totalItemWidth
                         wakeScrollOffset = targetOffset
@@ -281,6 +283,7 @@ struct SettingsView: View {
             selectedSleepGoal = sleepGoals[index]
             UserDefaults.standard.set(selectedSleepGoal, forKey: "sleepGoal")
         }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
         withAnimation(.easeOut) {
             let targetOffset = -CGFloat(index) * totalItemWidth
             sleepScrollOffset = targetOffset
@@ -293,6 +296,7 @@ struct SettingsView: View {
             selectedWakeTime = wakeTimeOptions[index]
             UserDefaults.standard.set(selectedWakeTime.timeIntervalSince1970, forKey: "goalWakeTime")
         }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
         withAnimation(.easeOut) {
             let targetOffset = -CGFloat(index) * totalItemWidth
             wakeScrollOffset = targetOffset

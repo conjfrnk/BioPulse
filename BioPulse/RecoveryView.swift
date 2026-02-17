@@ -26,7 +26,7 @@ struct RecoveryView: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 contentView
                     .blur(radius: expandedNight == nil ? 0 : 5)
@@ -239,6 +239,7 @@ struct NightsList: View {
                 .onTapGesture {
                     onNightTap(night)
                 }
+                .accessibilityHint("Double tap to view detailed breakdown")
             }
             if !nights.isEmpty && !isLoading {
                 Color.clear
@@ -305,6 +306,7 @@ struct NightCardView: View {
                     Text("\(nightData.sleepScore)")
                         .font(.system(size: 14, weight: .bold))
                 }
+                .accessibilityLabel("Sleep score \(nightData.sleepScore)")
             }
             HStack {
                 Text(

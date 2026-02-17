@@ -41,8 +41,6 @@ struct MilestoneTileView: View {
             .padding(8)
         }
         .frame(height: height)
-        .onTapGesture {
-        }
     }
 
     private func timeString(_ date: Date) -> String {
@@ -88,7 +86,7 @@ struct EnergyView: View {
     @State private var currentTime = Date()
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             GeometryReader { geo in
                 ZStack(alignment: .topLeading) {
                     let layout = layoutItems(for: geo.size)
@@ -186,7 +184,7 @@ struct EnergyView: View {
                     loadNightData()
                 }
                 .onReceive(
-                    Timer.publish(every: 10, on: .main, in: .common)
+                    Timer.publish(every: 1, on: .main, in: .common)
                         .autoconnect()
                 ) { _ in
                     currentTime = Date()

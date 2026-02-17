@@ -48,7 +48,7 @@ struct DataView: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(alignment: .leading) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
@@ -83,6 +83,7 @@ struct DataView: View {
 
                             } else {
                                 Text("No sleep data available")
+                                    .foregroundColor(.secondary)
                                     .frame(
                                         maxWidth: .infinity, alignment: .center
                                     )
