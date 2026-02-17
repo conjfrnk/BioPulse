@@ -8,16 +8,26 @@
 import Charts
 import SwiftUI
 
+struct SleepStageEntry: Identifiable {
+    let id = UUID()
+    let date: Date
+    let stage: String
+    let hours: Double
+}
+
 struct TrendView: View {
-    @StateObject private var healthDataManager = HealthDataManager()
+    @EnvironmentObject var healthDataManager: HealthDataManager
     @State private var nights: [HealthDataManager.NightData] = []
+    @State private var allNights: [HealthDataManager.NightData] = []
     @State private var dailyHRV: [Date: Double] = [:]
     @State private var dailyRHR: [Date: Double] = [:]
     @State private var isLoading = false
     @State private var showingSettings = false
     @State private var showingInfo = false
+    @State private var selectedPeriod = 30
 
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.colorScheme) var colorScheme
 
     private var goalSleepMinutes: Int {
         UserDefaults.standard.integer(forKey: "sleepGoal")
@@ -28,14 +38,47 @@ struct TrendView: View {
         return g == 0 || w == 0
     }
 
+    private var cardBackground: some View {
+        RoundedRectangle(cornerRadius: 16)
+            .fill(colorScheme == .dark ? Color(.systemGray6) : Color(.systemBackground))
+            .shadow(color: .gray.opacity(0.2), radius: 5)
+    }
+
+    private var filteredNights: [HealthDataManager.NightData] {
+        let sorted = allNights.sorted { $0.date > $1.date }
+        return Array(sorted.prefix(selectedPeriod))
+    }
+
+    private var filteredHRV: [Date: Double] {
+        let cal = Calendar.current
+        let cutoff = cal.date(byAdding: .day, value: -selectedPeriod, to: Date()) ?? Date()
+        return dailyHRV.filter { $0.key >= cutoff }
+    }
+
+    private var filteredRHR: [Date: Double] {
+        let cal = Calendar.current
+        let cutoff = cal.date(byAdding: .day, value: -selectedPeriod, to: Date()) ?? Date()
+        return dailyRHR.filter { $0.key >= cutoff }
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 30) {
+                VStack(alignment: .leading, spacing: 20) {
+                    Picker("Period", selection: $selectedPeriod) {
+                        Text("7d").tag(7)
+                        Text("14d").tag(14)
+                        Text("30d").tag(30)
+                        Text("90d").tag(90)
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal)
+
                     if isLoading {
                         ProgressView("Loading data...")
                             .frame(maxWidth: .infinity)
-                    } else if nights.isEmpty {
+                            .padding(.top, 40)
+                    } else if allNights.isEmpty {
                         VStack(spacing: 12) {
                             Image(systemName: "moon.zzz")
                                 .font(.system(size: 40))
@@ -47,27 +90,112 @@ struct TrendView: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding()
+                        .padding(.top, 40)
                     } else {
-                        SleepTrendView(
-                            sleepData: convertToStages(nights),
-                            goalSleepMinutes: goalSleepMinutes,
-                            goalWakeTime: fetchGoalWakeTime(),
-                            sleepNights: nights
-                        )
-                        if dailyHRV.filter({ $0.value != 0 }).isEmpty {
-                            Text("No HRV data (Last 30 days)")
-                                .foregroundColor(.secondary)
-                        } else {
-                            HRVTrendChart(dailyHRV: dailyHRV)
-                                .frame(height: 200)
-                                .padding(.bottom, 20)
+                        // Sleep Trend card
+                        VStack(alignment: .leading, spacing: 12) {
+                            Label {
+                                Text("Sleep Trend")
+                                    .font(.headline)
+                            } icon: {
+                                Image(systemName: "chart.bar")
+                                    .foregroundColor(.blue)
+                            }
+
+                            Divider()
+
+                            SleepTrendView(
+                                sleepData: convertToStages(filteredNights),
+                                goalSleepMinutes: goalSleepMinutes,
+                                goalWakeTime: fetchGoalWakeTime(),
+                                sleepNights: filteredNights
+                            )
                         }
-                        if dailyRHR.filter({ $0.value != 0 }).isEmpty {
-                            Text("No RHR data (Last 30 days)")
-                                .foregroundColor(.secondary)
+                        .padding()
+                        .background(cardBackground)
+
+                        sleepStagesSection
+
+                        // HRV card
+                        if filteredHRV.filter({ $0.value != 0 }).isEmpty {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Label {
+                                    Text("Heart Rate Variability")
+                                        .font(.headline)
+                                } icon: {
+                                    Image(systemName: "waveform.path.ecg")
+                                        .foregroundColor(.green)
+                                }
+
+                                Divider()
+
+                                Text("No HRV data (Last \(selectedPeriod) days)")
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding()
+                            .background(cardBackground)
                         } else {
-                            RHRTrendChart(dailyRHR: dailyRHR)
-                                .frame(height: 200)
+                            VStack(alignment: .leading, spacing: 12) {
+                                Label {
+                                    Text("Heart Rate Variability")
+                                        .font(.headline)
+                                } icon: {
+                                    Image(systemName: "waveform.path.ecg")
+                                        .foregroundColor(.green)
+                                }
+
+                                Text("30-day nightly HRV trend")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+
+                                Divider()
+
+                                HRVTrendChart(dailyHRV: filteredHRV, selectedPeriod: selectedPeriod)
+                                    .frame(height: 200)
+                            }
+                            .padding()
+                            .background(cardBackground)
+                        }
+
+                        // RHR card
+                        if filteredRHR.filter({ $0.value != 0 }).isEmpty {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Label {
+                                    Text("Resting Heart Rate")
+                                        .font(.headline)
+                                } icon: {
+                                    Image(systemName: "heart.fill")
+                                        .foregroundColor(.red)
+                                }
+
+                                Divider()
+
+                                Text("No RHR data (Last \(selectedPeriod) days)")
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding()
+                            .background(cardBackground)
+                        } else {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Label {
+                                    Text("Resting Heart Rate")
+                                        .font(.headline)
+                                } icon: {
+                                    Image(systemName: "heart.fill")
+                                        .foregroundColor(.red)
+                                }
+
+                                Text("30-day nightly resting heart rate trend")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+
+                                Divider()
+
+                                RHRTrendChart(dailyRHR: filteredRHR, selectedPeriod: selectedPeriod)
+                                    .frame(height: 200)
+                            }
+                            .padding()
+                            .background(cardBackground)
                         }
                     }
                 }
@@ -123,27 +251,108 @@ struct TrendView: View {
         }
     }
 
+    // MARK: - Sleep Stages Section
+
+    @ViewBuilder
+    private var sleepStagesSection: some View {
+        let stageData = buildSleepStageData()
+        if !stageData.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                Label {
+                    Text("Sleep Stages")
+                        .font(.headline)
+                } icon: {
+                    Image(systemName: "chart.bar.fill")
+                        .foregroundColor(.purple)
+                }
+
+                Divider()
+
+                Chart {
+                    ForEach(stageData) { entry in
+                        BarMark(
+                            x: .value("Date", entry.date, unit: .day),
+                            y: .value("Hours", entry.hours)
+                        )
+                        .foregroundStyle(by: .value("Stage", entry.stage))
+                    }
+                }
+                .chartForegroundStyleScale([
+                    "Deep": Color.purple,
+                    "REM": Color.cyan,
+                    "Core": Color.blue,
+                ])
+                .chartYAxis {
+                    AxisMarks { value in
+                        if let h = value.as(Double.self) {
+                            AxisValueLabel { Text("\(h, specifier: "%.0f")h") }
+                            AxisTick()
+                            AxisGridLine()
+                        }
+                    }
+                }
+                .chartXAxis {
+                    AxisMarks(values: .automatic(desiredCount: min(stageData.count / 3, 7))) { val in
+                        if let date = val.as(Date.self) {
+                            AxisValueLabel {
+                                Text(shortDateString(date))
+                            }
+                        }
+                    }
+                }
+                .frame(height: 200)
+            }
+            .padding()
+            .background(cardBackground)
+        }
+    }
+
+    private func buildSleepStageData() -> [SleepStageEntry] {
+        let cal = Calendar.current
+        var entries: [SleepStageEntry] = []
+        for night in filteredNights {
+            let dayKey = cal.startOfDay(for: night.date)
+            let deepHours = night.deepSleepDuration / 3600.0
+            let remHours = night.remSleepDuration / 3600.0
+            let coreHours = night.coreSleepDuration / 3600.0
+            if deepHours + remHours + coreHours > 0 {
+                entries.append(SleepStageEntry(date: dayKey, stage: "Deep", hours: deepHours))
+                entries.append(SleepStageEntry(date: dayKey, stage: "REM", hours: remHours))
+                entries.append(SleepStageEntry(date: dayKey, stage: "Core", hours: coreHours))
+            }
+        }
+        return entries.sorted { $0.date < $1.date }
+    }
+
+    private func shortDateString(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "M/d"
+        return f.string(from: date)
+    }
+
+    // MARK: - Data Loading
+
     private func loadTrendData() {
         if isLoading { return }
         isLoading = true
-        nights = []
+        allNights = []
         dailyHRV = [:]
         dailyRHR = [:]
         healthDataManager.fetchNightsOverLastNDays(
             90, sleepGoalMinutes: goalSleepMinutes
         ) { fetched in
             let sorted = fetched.sorted { $0.date > $1.date }
-            let last30 = Array(sorted.prefix(30))
             let cal = Calendar.current
             var newHRV: [Date: Double] = [:]
             var newRHR: [Date: Double] = [:]
-            for n in last30 {
+            for n in sorted {
                 let dayKey = cal.startOfDay(for: n.date)
                 newHRV[dayKey] = n.hrv
                 newRHR[dayKey] = n.restingHeartRate
             }
             withAnimation(.easeInOut(duration: 0.3)) {
-                nights = sorted
+                allNights = sorted
+                nights = Array(sorted.prefix(30))
                 dailyHRV = newHRV
                 dailyRHR = newRHR
                 isLoading = false
@@ -159,24 +368,24 @@ struct TrendView: View {
                 return
             }
             isLoading = true
-            nights = []
+            allNights = []
             dailyHRV = [:]
             dailyRHR = [:]
             healthDataManager.fetchNightsOverLastNDays(
                 90, sleepGoalMinutes: goalSleepMinutes
             ) { fetched in
                 let sorted = fetched.sorted { $0.date > $1.date }
-                let last30 = Array(sorted.prefix(30))
                 let cal = Calendar.current
                 var newHRV: [Date: Double] = [:]
                 var newRHR: [Date: Double] = [:]
-                for n in last30 {
+                for n in sorted {
                     let dayKey = cal.startOfDay(for: n.date)
                     newHRV[dayKey] = n.hrv
                     newRHR[dayKey] = n.restingHeartRate
                 }
                 withAnimation(.easeInOut(duration: 0.3)) {
-                    self.nights = sorted
+                    self.allNights = sorted
+                    self.nights = Array(sorted.prefix(30))
                     self.dailyHRV = newHRV
                     self.dailyRHR = newRHR
                     self.isLoading = false

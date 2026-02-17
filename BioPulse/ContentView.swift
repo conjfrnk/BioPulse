@@ -10,7 +10,7 @@ import SwiftUI
 struct ContentView: View {
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @State private var selectedTab = 2  // Set Energy tab as default
-    @State private var healthDataManager = HealthDataManager()
+    @StateObject private var healthDataManager = HealthDataManager()
     @State private var authorizationStatus = "Not Requested"
     @State private var tabViewID = UUID() // Unique identifier for TabView refresh
 
@@ -56,6 +56,7 @@ struct ContentView: View {
                     }
                     .tag(4)
             }
+            .environmentObject(healthDataManager)
             .id(tabViewID) // Force TabView refresh
             .onAppear {
                 updateTabBarAppearance(for: selectedTab)

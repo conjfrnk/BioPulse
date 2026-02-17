@@ -8,7 +8,8 @@
 import SwiftUI
 
 struct RecoveryView: View {
-    @StateObject private var healthDataManager = HealthDataManager()
+    @EnvironmentObject var healthDataManager: HealthDataManager
+    @Environment(\.colorScheme) var colorScheme
     @State private var nights: [HealthDataManager.NightData] = []
     @State private var isLoading = false
     @State private var showScrollToTop = false
@@ -82,20 +83,23 @@ struct RecoveryView: View {
         }
     }
 
+    private var cardBackground: some View {
+        RoundedRectangle(cornerRadius: 16)
+            .fill(colorScheme == .dark ? Color(.systemGray6) : Color(.systemBackground))
+            .shadow(color: .gray.opacity(0.2), radius: 5)
+    }
+
     private var contentView: some View {
         ZStack(alignment: .bottomTrailing) {
             if nights.isEmpty && isLoading {
-                VStack {
-                    Spacer()
-                    ProgressView("Loading sleep data...")
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                ProgressView("Loading sleep data...")
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 40)
             } else if nights.isEmpty && !isLoading {
-                VStack {
-                    Text("No data available")
-                        .foregroundColor(.secondary)
-                }
+                Text("No data available")
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.top, 40)
             } else {
                 MainScrollView(
                     nights: nights,
@@ -217,19 +221,22 @@ struct MainScrollView: View {
     let hrvBaseline: Double
     let rhrBaseline: Double
     let onNightTap: (HealthDataManager.NightData) -> Void
+    @Environment(\.colorScheme) var colorScheme
+
+    private var cardBackground: some View {
+        RoundedRectangle(cornerRadius: 16)
+            .fill(colorScheme == .dark ? Color(.systemGray6) : Color(.systemBackground))
+            .shadow(color: .gray.opacity(0.2), radius: 5)
+    }
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                NightsList(
-                    nights: nights,
-                    loadMore: loadMore,
-                    isLoading: isLoading,
-                    sleepGoalMinutes: sleepGoalMinutes,
-                    hrvBaseline: hrvBaseline,
-                    rhrBaseline: rhrBaseline,
-                    onNightTap: onNightTap
-                )
+                VStack(spacing: 20) {
+                    baselinesCard
+                    nightsSection
+                }
+                .padding(.horizontal)
             }
             .coordinateSpace(name: "scroll")
             .overlay(
@@ -256,6 +263,81 @@ struct MainScrollView: View {
             }
         }
     }
+
+    private var baselinesCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label {
+                Text("Baselines")
+                    .font(.headline)
+            } icon: {
+                Image(systemName: "chart.line.uptrend.xyaxis")
+                    .foregroundColor(.purple)
+            }
+
+            Text("90-day rolling averages")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+
+            Divider()
+
+            HStack(spacing: 0) {
+                VStack(spacing: 4) {
+                    Text("HRV")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text("\(Int(hrvBaseline)) ms")
+                        .font(.system(.title3, design: .rounded))
+                        .bold()
+                }
+                .frame(maxWidth: .infinity)
+
+                VStack(spacing: 4) {
+                    Text("RHR")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text("\(Int(rhrBaseline)) bpm")
+                        .font(.system(.title3, design: .rounded))
+                        .bold()
+                }
+                .frame(maxWidth: .infinity)
+
+                VStack(spacing: 4) {
+                    Text("Sleep Goal")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text("\(sleepGoalMinutes / 60)h \(sleepGoalMinutes % 60)m")
+                        .font(.system(.title3, design: .rounded))
+                        .bold()
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .padding()
+        .background(cardBackground)
+    }
+
+    private var nightsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label {
+                Text("Recent Nights")
+                    .font(.headline)
+            } icon: {
+                Image(systemName: "moon.zzz.fill")
+                    .foregroundColor(.indigo)
+            }
+            .padding(.horizontal, 4)
+
+            NightsList(
+                nights: nights,
+                loadMore: loadMore,
+                isLoading: isLoading,
+                sleepGoalMinutes: sleepGoalMinutes,
+                hrvBaseline: hrvBaseline,
+                rhrBaseline: rhrBaseline,
+                onNightTap: onNightTap
+            )
+        }
+    }
 }
 
 struct NightsList: View {
@@ -276,7 +358,6 @@ struct NightsList: View {
                     hrvBaseline: hrvBaseline,
                     rhrBaseline: rhrBaseline
                 )
-                .padding(.horizontal)
                 .id(night.id)
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
                 .onTapGesture {
@@ -294,7 +375,6 @@ struct NightsList: View {
                     .padding()
             }
         }
-        .padding(.vertical)
     }
 }
 

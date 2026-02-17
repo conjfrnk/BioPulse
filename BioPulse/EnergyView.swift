@@ -26,8 +26,9 @@ struct MilestoneTileView: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: 12)
                 .fill(Color.blue.opacity(0.15))
+                .shadow(color: .gray.opacity(0.1), radius: 2)
             HStack {
                 Text(
                     "\(timeString(milestone.start)) - \(timeString(milestone.end))"
@@ -44,9 +45,7 @@ struct MilestoneTileView: View {
     }
 
     private func timeString(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "HH:mm"
-        return f.string(from: date)
+        SleepFormatters.timeOfDay.string(from: date)
     }
 }
 
@@ -102,14 +101,13 @@ private struct CurrentTimeOverlay: View {
     }
 
     private func timeString(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "HH:mm"
-        return f.string(from: date)
+        SleepFormatters.timeOfDay.string(from: date)
     }
 }
 
 struct EnergyView: View {
-    @StateObject private var healthDataManager = HealthDataManager()
+    @EnvironmentObject var healthDataManager: HealthDataManager
+    @Environment(\.colorScheme) var colorScheme
     @State private var nights: [HealthDataManager.NightData] = []
     @State private var isLoading = false
     @State private var showingSettings = false
@@ -144,103 +142,153 @@ struct EnergyView: View {
 
     var body: some View {
         NavigationStack {
-            GeometryReader { geo in
-                ZStack(alignment: .topLeading) {
-                    let layout = layoutItems(for: geo.size)
-                    let idealAnchors = anchorPoints(
-                        for: layout, in: geo.size, readiness: 1.0)
-                    Path { path in
-                        guard idealAnchors.count > 1 else { return }
-                        catmullRomPath(path: &path, anchors: idealAnchors)
+            Group {
+                if isLoading && milestoneFractions.isEmpty {
+                    ProgressView("Loading energy data...")
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 40)
+                } else if !isLoading && nights.isEmpty {
+                    VStack(spacing: 16) {
+                        Image(systemName: "bolt.slash")
+                            .font(.largeTitle)
+                            .foregroundColor(.secondary)
+                        Text("No sleep data available. Wear your Apple Watch to bed to see your daily energy forecast.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 32)
                     }
-                    .stroke(
-                        Color.gray.opacity(0.25),
-                        style: StrokeStyle(
-                            lineWidth: 3, lineCap: .round, lineJoin: .round))
-                    let userAnchors = anchorPoints(
-                        for: layout, in: geo.size, readiness: readinessFactor())
-                    Path { path in
-                        guard userAnchors.count > 1 else { return }
-                        catmullRomPath(path: &path, anchors: userAnchors)
-                    }
-                    .stroke(
-                        Color.purple.opacity(0.75),
-                        style: StrokeStyle(
-                            lineWidth: 3, lineCap: .round, lineJoin: .round))
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 40)
+                } else {
+                    GeometryReader { geo in
+                        ZStack(alignment: .topLeading) {
+                            let layout = layoutItems(for: geo.size)
+                            let idealAnchors = anchorPoints(
+                                for: layout, in: geo.size, readiness: 1.0)
+                            Path { path in
+                                guard idealAnchors.count > 1 else { return }
+                                catmullRomPath(path: &path, anchors: idealAnchors)
+                            }
+                            .stroke(
+                                Color.gray.opacity(0.25),
+                                style: StrokeStyle(
+                                    lineWidth: 3, lineCap: .round, lineJoin: .round))
+                            let userAnchors = anchorPoints(
+                                for: layout, in: geo.size, readiness: readinessFactor())
+                            Path { path in
+                                guard userAnchors.count > 1 else { return }
+                                catmullRomPath(path: &path, anchors: userAnchors)
+                            }
+                            .stroke(
+                                Color.purple.opacity(0.75),
+                                style: StrokeStyle(
+                                    lineWidth: 3, lineCap: .round, lineJoin: .round))
 
-                    ForEach(layout) { lm in
-                        MilestoneTileView(
-                            milestone: lm.milestone, height: lm.height
-                        )
-                        .padding(.horizontal, sidePadding)
-                        .offset(y: lm.offset)
-                    }
+                            ForEach(layout) { lm in
+                                MilestoneTileView(
+                                    milestone: lm.milestone, height: lm.height
+                                )
+                                .padding(.horizontal, sidePadding)
+                                .offset(y: lm.offset)
+                            }
 
-                    CurrentTimeOverlay(
-                        layout: layout,
-                        dayStart: dayStart,
-                        dayEnd: dayEnd,
-                        topMargin: topMargin,
-                        width: geo.size.width
-                    )
-
-                    if let bedtimeOffset = offsetForGoalBedtime(
-                        layout: layout, width: geo.size.width)
-                    {
-                        Path { p in
-                            p.move(to: CGPoint(x: 0, y: bedtimeOffset))
-                            p.addLine(
-                                to: CGPoint(x: geo.size.width, y: bedtimeOffset)
+                            CurrentTimeOverlay(
+                                layout: layout,
+                                dayStart: dayStart,
+                                dayEnd: dayEnd,
+                                topMargin: topMargin,
+                                width: geo.size.width
                             )
+
+                            if let bedtimeOffset = offsetForGoalBedtime(
+                                layout: layout, width: geo.size.width)
+                            {
+                                Path { p in
+                                    p.move(to: CGPoint(x: 0, y: bedtimeOffset))
+                                    p.addLine(
+                                        to: CGPoint(x: geo.size.width, y: bedtimeOffset)
+                                    )
+                                }
+                                .stroke(style: StrokeStyle(lineWidth: 2, dash: [5, 5]))
+                                .foregroundColor(.green)
+                                let bedtimeString =
+                                    "Bedtime: " + timeString(computeRawGoalBedtime())
+                                Text(bedtimeString)
+                                    .font(.caption)
+                                    .foregroundColor(.green)
+                                    .offset(
+                                        x: geo.size.width / 2 - textWidth(
+                                            bedtimeString, font: .caption) / 2,
+                                        y: bedtimeOffset + 4)
+                            }
                         }
-                        .stroke(style: StrokeStyle(lineWidth: 2, dash: [5, 5]))
-                        .foregroundColor(.green)
-                        let bedtimeString =
-                            "Bedtime: " + timeString(computeRawGoalBedtime())
-                        Text(bedtimeString)
+                        .safeAreaInset(edge: .bottom) {
+                            HStack(spacing: 16) {
+                                HStack(spacing: 4) {
+                                    Circle()
+                                        .fill(Color.gray.opacity(0.25))
+                                        .frame(width: 8, height: 8)
+                                    Text("Ideal")
+                                }
+                                HStack(spacing: 4) {
+                                    Circle()
+                                        .fill(Color.purple.opacity(0.75))
+                                        .frame(width: 8, height: 8)
+                                    Text("Your Energy")
+                                }
+                            }
                             .font(.caption)
-                            .foregroundColor(.green)
-                            .offset(
-                                x: geo.size.width / 2 - textWidth(
-                                    bedtimeString, font: .caption) / 2,
-                                y: bedtimeOffset + 4)
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(colorScheme == .dark ? Color(.systemGray6) : Color(.systemBackground))
+                                    .shadow(color: .gray.opacity(0.15), radius: 3)
+                            )
+                            .padding(.bottom, 4)
+                        }
                     }
                 }
-                .navigationTitle("Energy")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarLeading) {
+            }
+            .navigationTitle("Energy")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        showingInfo = true
+                    } label: {
+                        Image(systemName: "info.circle")
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    HStack(spacing: 12) {
                         Button {
-                            showingInfo = true
+                            Task { await refreshData() }
                         } label: {
-                            Image(systemName: "info.circle")
+                            Image(systemName: "arrow.clockwise")
                         }
-                    }
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        HStack(spacing: 12) {
-                            Button {
-                                Task { await refreshData() }
-                            } label: {
-                                Image(systemName: "arrow.clockwise")
-                            }
-                            Button {
-                                showingSettings = true
-                            } label: {
-                                Image(systemName: "gearshape")
-                            }
+                        Button {
+                            showingSettings = true
+                        } label: {
+                            Image(systemName: "gearshape")
                         }
                     }
                 }
-                .sheet(isPresented: $showingSettings) {
-                    SettingsView()
-                }
-                .sheet(isPresented: $showingInfo) {
-                    InfoView()
-                }
-                .onAppear {
-                    loadUserGoal()
-                    loadNightData()
-                }
+            }
+            .refreshable {
+                await refreshData()
+            }
+            .sheet(isPresented: $showingSettings) {
+                SettingsView()
+            }
+            .sheet(isPresented: $showingInfo) {
+                InfoView()
+            }
+            .onAppear {
+                loadUserGoal()
+                loadNightData()
             }
         }
         .onChange(of: showingSettings) { wasShowing, isShowing in
@@ -314,8 +362,15 @@ struct EnergyView: View {
     {
         if arr.isEmpty { return 0 }
         let c = Calendar.current
-        let idealWake = c.date(
-            bySettingHour: 8, minute: 0, second: 0, of: Date())!
+        let stored = UserDefaults.standard.double(forKey: "goalWakeTime")
+        let idealWake: Date
+        if stored > 0 {
+            let ref = Date(timeIntervalSince1970: stored)
+            let comps = c.dateComponents([.hour, .minute], from: ref)
+            idealWake = c.date(bySettingHour: comps.hour ?? 7, minute: comps.minute ?? 0, second: 0, of: Date()) ?? c.date(bySettingHour: 7, minute: 0, second: 0, of: Date())!
+        } else {
+            idealWake = c.date(bySettingHour: 7, minute: 0, second: 0, of: Date())!
+        }
         let wakes = arr.map { $0.sleepEndTime }
         let avgWake = Date(
             timeIntervalSince1970: wakes.map { $0.timeIntervalSince1970 }
@@ -545,9 +600,7 @@ struct EnergyView: View {
     }
 
     private func timeString(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "HH:mm"
-        return f.string(from: date)
+        SleepFormatters.timeOfDay.string(from: date)
     }
 
     private func textWidth(_ text: String, font: Font) -> CGFloat {

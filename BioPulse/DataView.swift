@@ -27,7 +27,7 @@ struct SleepRecord: Hashable, Identifiable {
 }
 
 struct DataView: View {
-    @StateObject private var healthDataManager = HealthDataManager()
+    @EnvironmentObject var healthDataManager: HealthDataManager
     @State private var showingSettings = false
     @State private var showingInfo = false
     @State private var sleepData: [SleepRecord]?
@@ -41,66 +41,244 @@ struct DataView: View {
     }
 
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.colorScheme) var colorScheme
 
     private var sleepGoalMinutes: Int {
         let val = UserDefaults.standard.integer(forKey: "sleepGoal")
         return val > 0 ? val : 480
     }
 
+    private var dateLabel: String {
+        let cal = Calendar.current
+        if cal.isDateInToday(selectedDate) {
+            return "Today"
+        } else if cal.isDateInYesterday(selectedDate) {
+            return "Yesterday"
+        } else {
+            return SleepFormatters.fullDayDate.string(from: selectedDate)
+        }
+    }
+
+    private var canGoForward: Bool {
+        !Calendar.current.isDateInToday(selectedDate)
+    }
+
+    private var cardBackground: some View {
+        RoundedRectangle(cornerRadius: 16)
+            .fill(colorScheme == .dark ? Color(.systemGray6) : Color(.systemBackground))
+            .shadow(color: .gray.opacity(0.2), radius: 5)
+    }
+
+    private var sleepStageBreakdown: [(stage: String, color: Color, duration: TimeInterval, percentage: Double)] {
+        guard let data = sleepData, !data.isEmpty else { return [] }
+        let totalSleep = data
+            .filter { $0.stage != "Awake" && $0.stage != "InBed" }
+            .reduce(0.0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }
+        let totalInBed = data
+            .reduce(0.0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }
+
+        return ["Deep", "Core", "REM", "Awake"].compactMap { stage in
+            let duration = data
+                .filter { $0.stage == stage }
+                .reduce(0.0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }
+            guard duration > 0 else { return nil }
+            let pct: Double
+            if stage == "Awake" {
+                pct = totalInBed > 0 ? (duration / totalInBed) * 100 : 0
+            } else {
+                pct = totalSleep > 0 ? (duration / totalSleep) * 100 : 0
+            }
+            let color: Color = switch stage {
+            case "Deep": .purple
+            case "Core": .blue
+            case "REM": .cyan
+            case "Awake": .red
+            default: .gray
+            }
+            return (stage, color, duration, pct)
+        }
+    }
+
+    private var sleepDebtRecommendation: String {
+        let debtHours = min(totalSleepDebt / 3600.0, 20.0)
+        if debtHours <= 2 {
+            return "You're well-rested"
+        } else if debtHours <= 5 {
+            return "Add ~30 min/night this week"
+        } else if debtHours <= 10 {
+            return "Add ~45 min/night this week"
+        } else {
+            return "Prioritize extra sleep; consider naps"
+        }
+    }
+
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading) {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
-                        VStack(alignment: .leading) {
-                            if isLoadingSleep {
-                                VStack(spacing: 12) {
-                                    ProgressView("Loading sleep data...")
+            ScrollView {
+                if isLoadingSleep {
+                    ProgressView("Loading sleep data...")
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 40)
+                } else if let sleepData = sleepData, !sleepData.isEmpty {
+                    VStack(spacing: 20) {
+                        // Sleep Data card
+                        VStack(alignment: .leading, spacing: 12) {
+                            Label {
+                                Text("Sleep Data")
+                                    .font(.headline)
+                            } icon: {
+                                Image(systemName: "bed.double.fill")
+                                    .foregroundColor(.purple)
+                            }
+
+                            Divider()
+
+                            // Date navigation
+                            HStack {
+                                Button {
+                                    selectedDate = Calendar.current.date(byAdding: .day, value: -1, to: selectedDate) ?? selectedDate
+                                    loadAllData()
+                                } label: {
+                                    Image(systemName: "chevron.left")
                                 }
-                                .frame(maxWidth: .infinity, maxHeight: 200)
-                            } else if let sleepData = sleepData,
-                                !sleepData.isEmpty
-                            {
-                                SleepStagesChartView(
-                                    sleepData: sleepData.map {
-                                        ($0.stage, $0.startDate, $0.endDate)
+                                Spacer()
+                                Text(dateLabel)
+                                    .font(.headline)
+                                Spacer()
+                                Button {
+                                    selectedDate = Calendar.current.date(byAdding: .day, value: 1, to: selectedDate) ?? selectedDate
+                                    loadAllData()
+                                } label: {
+                                    Image(systemName: "chevron.right")
+                                }
+                                .disabled(!canGoForward)
+                                .opacity(canGoForward ? 1 : 0.3)
+                            }
+
+                            SleepStagesChartView(
+                                sleepData: sleepData.map {
+                                    ($0.stage, $0.startDate, $0.endDate)
+                                }
+                            )
+                            .id(sleepData.hashValue)
+
+                            // Sleep stage summary
+                            if !sleepStageBreakdown.isEmpty {
+                                HStack(spacing: 0) {
+                                    ForEach(sleepStageBreakdown, id: \.stage) { info in
+                                        VStack(spacing: 2) {
+                                            Circle()
+                                                .fill(info.color)
+                                                .frame(width: 8, height: 8)
+                                            Text(info.stage)
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                            Text(SleepFormatters.formatDuration(info.duration))
+                                                .font(.caption2)
+                                                .fontWeight(.medium)
+                                            Text(String(format: "%.0f%%", info.percentage))
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                        }
+                                        .frame(maxWidth: .infinity)
                                     }
-                                )
-                                .id(sleepData.hashValue)
-
-                                HStack {
-                                    Spacer()
-                                    let debtHours = totalSleepDebt / 3600.0
-                                    let cappedDebt = min(totalSleepDebt, 20.0 * 3600.0)
-                                    let isCapped = debtHours > 20.0
-                                    Text(
-                                        "Sleep Debt: \(formatTimeInterval(cappedDebt))\(isCapped ? " (max)" : "")"
-                                    )
-                                    .font(.subheadline)
-                                    .foregroundColor(sleepDebtColor(hours: min(debtHours, 20.0)))
-                                    Spacer()
                                 }
-                                .padding(.top, 2)
-
-                                SleepDebtView(dailyDebt: dailyDebtDelta)
-                                    .padding(.top, 8)
-
-                            } else {
-                                VStack(spacing: 12) {
-                                    Image(systemName: "bed.double")
-                                        .font(.system(size: 40))
-                                        .foregroundColor(.secondary)
-                                    Text("No sleep data available yet. Wear your Apple Watch to bed and ensure HealthKit permissions are granted in Settings.")
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
-                                        .multilineTextAlignment(.center)
-                                }
-                                .frame(
-                                    maxWidth: .infinity, alignment: .center
-                                )
-                                .padding()
+                                .padding(.top, 4)
                             }
                         }
+                        .padding()
+                        .background(cardBackground)
+
+                        // Sleep Debt card
+                        VStack(alignment: .leading, spacing: 12) {
+                            Label {
+                                Text("Sleep Debt")
+                                    .font(.headline)
+                            } icon: {
+                                Image(systemName: "moon.zzz.fill")
+                                    .foregroundColor(.indigo)
+                            }
+
+                            Divider()
+
+                            HStack {
+                                Spacer()
+                                let debtHours = totalSleepDebt / 3600.0
+                                let cappedDebt = min(totalSleepDebt, 20.0 * 3600.0)
+                                let isCapped = debtHours > 20.0
+                                Text(
+                                    "Sleep Debt: \(formatTimeInterval(cappedDebt))\(isCapped ? " (max)" : "")"
+                                )
+                                .font(.subheadline)
+                                .foregroundColor(sleepDebtColor(hours: min(debtHours, 20.0)))
+                                Spacer()
+                            }
+
+                            HStack {
+                                Spacer()
+                                Text(sleepDebtRecommendation)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                            }
+
+                            SleepDebtView(dailyDebt: dailyDebtDelta)
+                                .padding(.top, 8)
+                        }
+                        .padding()
+                        .background(cardBackground)
+                    }
+                    .padding()
+                } else {
+                    VStack(spacing: 20) {
+                        // Date navigation card (shown even when empty)
+                        VStack(alignment: .leading, spacing: 12) {
+                            Label {
+                                Text("Sleep Data")
+                                    .font(.headline)
+                            } icon: {
+                                Image(systemName: "bed.double.fill")
+                                    .foregroundColor(.purple)
+                            }
+
+                            Divider()
+
+                            // Date navigation
+                            HStack {
+                                Button {
+                                    selectedDate = Calendar.current.date(byAdding: .day, value: -1, to: selectedDate) ?? selectedDate
+                                    loadAllData()
+                                } label: {
+                                    Image(systemName: "chevron.left")
+                                }
+                                Spacer()
+                                Text(dateLabel)
+                                    .font(.headline)
+                                Spacer()
+                                Button {
+                                    selectedDate = Calendar.current.date(byAdding: .day, value: 1, to: selectedDate) ?? selectedDate
+                                    loadAllData()
+                                } label: {
+                                    Image(systemName: "chevron.right")
+                                }
+                                .disabled(!canGoForward)
+                                .opacity(canGoForward ? 1 : 0.3)
+                            }
+
+                            VStack(spacing: 12) {
+                                Image(systemName: "bed.double")
+                                    .font(.system(size: 40))
+                                    .foregroundColor(.secondary)
+                                Text("No sleep data available yet. Wear your Apple Watch to bed and ensure HealthKit permissions are granted in Settings.")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(.top, 40)
+                        }
+                        .padding()
+                        .background(cardBackground)
                     }
                     .padding()
                 }
@@ -156,7 +334,7 @@ struct DataView: View {
         await withCheckedContinuation { continuation in
             isLoadingSleep = true
             sleepData = nil
-            healthDataManager.fetchSleepData(for: Date()) { data, error in
+            healthDataManager.fetchSleepData(for: selectedDate) { data, error in
                 DispatchQueue.main.async {
                     if let data = data {
                         let recs = data.map {
@@ -191,7 +369,7 @@ struct DataView: View {
         }
         isLoadingSleep = true
         sleepData = nil
-        healthDataManager.fetchSleepData(for: Date()) { data, error in
+        healthDataManager.fetchSleepData(for: selectedDate) { data, error in
             DispatchQueue.main.async {
                 if let data = data {
                     let recs = data.map {

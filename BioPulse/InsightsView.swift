@@ -9,7 +9,7 @@ import SwiftUI
 import UIKit
 
 struct InsightsView: View {
-    @StateObject private var healthDataManager = HealthDataManager()
+    @EnvironmentObject var healthDataManager: HealthDataManager
     @State private var nights: [HealthDataManager.NightData] = []
     @State private var isLoading = false
     @State private var showingSettings = false
